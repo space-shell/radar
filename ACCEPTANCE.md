@@ -560,6 +560,10 @@ question of how loud the green should be.
 way to express a fill without growing its surface. It now takes an optional `chrome`,
 which is the box behind the word. Absent, the control is exactly what it was.
 
+Reading the host's palette out of the app bundle settled what "the green" meant. Paseo
+greens in two places, not one: `statusSuccess` is `#6cb17b` light and `#3e704a` dark, and
+the light theme's `accent` is `#20744A`, which is why the links were green as well.
+
 - [ ] **AC-AA1** The submit controls are buttons sized to their own labels, not bars across the card. `chrome` carries the padding and the radius, and `Steady` reserves the width of the widest of the three states, so the box does not resize between idle, armed and working.
 - [x] **AC-AA2** The expected press is the filled one. Submit approval and Submit comment carry the green fill with `accentForeground` on it; Request changes is outlined in `border` with ordinary foreground text, because two fills side by side name no default between them. AC-G24 still holds: it is its own control, not the fallback for an unchecked box.
 - [x] **AC-AA3** Arming changes the colour and not the shape. The fill becomes `statusWarning` and the outline's border and text do the same, so the second press lands on the target the first one armed. AC-R1 still holds, and so does group X: the armed state is still the warning colour, and the reserved width means nothing beside the control moves.
@@ -567,7 +571,11 @@ which is the box behind the word. Absent, the control is exactly what it was.
 - [x] **AC-AA5** The mute holds the brightness. `desaturate` pulls a colour towards the weighted grey the eye reads as its brightness, so white text on the fill is as readable after the adjustment as before it. `probes/colour.mjs` C3 asserts the brightness is unchanged, the channel spread has narrowed, green is still the strongest channel, and alpha survives.
 - [x] **AC-AA6** A theme notation the helper cannot read costs the adjustment, never the colour. Hex in three lengths, `rgb`, `rgba`, `hsl` and `hsla` are parsed; anything else is returned exactly as it came. C1 asserts eleven notations read correctly, C2 that ten unreadable ones pass through untouched.
 - [x] **AC-AA7** Nothing else grew a button. `chrome` is optional and only the wizard passes it, so the row, the detail map and the summary card are the text controls they were. A screen of buttons names no action in particular, which is the problem this change was made to fix.
-- [ ] **AC-AA8** The button looks right and the green is quieter without being grey. Awaiting the app.
+- [x] **AC-AA8** Every green on a radar surface is accounted for. The plugin draws colour only from the eleven tokens `PluginTheme` exposes, and the census is in the probe: `statusSuccess` at five sites, all through `success()`, and `accent` at twelve, all through `highlight()`. What is left green is drawn by the host and has no plugin surface to change it: the switch track when a switch is on, which `SettingsSwitchProps` gives no colour prop for, and the three `variant: "success"` toasts, where the plugin picks the variant and the host picks the colour.
+- [x] **AC-AA9** A filled control derives its text colour from its own fill. `carryWhite` darkens a fill by as little as it takes for white on it to clear WCAG's 4.5 floor, and `WHITE` is what it is paired with. `accentForeground` cannot do this job: Paseo's dark theme accents in a near white, so the token is a near black there, which is correct on the accent and unreadable on a green. C5 asserts the floor is cleared and not overshot on four fills, that black is already dark enough, and that an unreadable notation is left alone.
+- [x] **AC-AA10** The accent is quietened too, because in Paseo's light theme the accent is a green. `#20744A` is what every link, the running node, the spinner and the preview's left rule were drawn in. `highlight()` pulls it 25%, gentler than the green's 40% because a link has to stay apart from the text around it. The dark theme accents in `#e4e4e7`, and a pull towards grey does nothing to something already grey: C6 asserts it moves by under one step of a channel.
+- [x] **AC-AA11** The two themes this actually runs against are in the probe. C6 carries Paseo's own values, light and dark, and asserts what each produces: the light green fill lands at `rgb(95, 126, 102)` and the dark one needs no darkening at all, both armed fills clear the floor, and the light accent comes out `rgb(48, 111, 79)`.
+- [ ] **AC-AA12** The button looks right, and the green and the links are quieter without being grey. Awaiting the app.
 
 ## Awaiting the app
 
@@ -605,7 +613,7 @@ invocation command, so there is no route to them except the running app.
 | AC-X1 to AC-X5                 | One press on a confirm, one on the clock, one on each tab, watched for anything beside them moving              |
 | AC-Y7                          | Opening the plugin on an Android device, which is the only place the Hermes failure showed                      |
 | AC-Z18                         | Opening Settings, Radar: the pickers populated, one brief edited and reverted, one save, one Discard            |
-| AC-AA1, AC-AA8                 | A look at the wizard's last step, approve on and then off, with one control armed                              |
+| AC-AA1, AC-AA12                | A look at the wizard's last step, approve on and then off, with one control armed, in both themes              |
 
 ## Non-goals
 

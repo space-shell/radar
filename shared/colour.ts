@@ -143,6 +143,68 @@ export function desaturate(colour: string, amount: number): string {
   });
 }
 
+/** sRGB to linear light, the gamma step a contrast ratio is defined on. */
+function linear(channel: number): number {
+  const part = channel / 255;
+  return part <= 0.04045
+    ? part / 12.92
+    : Math.pow((part + 0.055) / 1.055, 2.4);
+}
+
+/** Relative luminance as WCAG defines it: 0 for black, 1 for white. */
+function luminance({ r, g, b }: Rgba): number {
+  return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+}
+
+/** The text drawn on a filled control. See `carryWhite`. */
+export const WHITE = "#ffffff";
+
+/** WCAG's floor for text that is neither large nor decorative. */
+const FLOOR = 4.5;
+
+/**
+ * Darkens a fill by as little as it takes for white text on it to be legible.
+ *
+ * `accentForeground` cannot do this job. It is the foreground for the accent,
+ * and Paseo's dark theme accents in a near white, so the token is a near black
+ * there: correct on the accent, unreadable on a green. A filled control has to
+ * derive its text colour from its own fill, and the cheapest way to do that is
+ * to fix the text at white and move the fill until the pair reads.
+ *
+ * Black always clears the floor, so the search always terminates. A colour
+ * already dark enough is returned at its own value, untouched.
+ */
+export function carryWhite(colour: string, floor = FLOOR): string {
+  const rgba = parse(colour);
+  if (!rgba) return colour;
+
+  // Rounded here rather than in `format`, so the contrast is measured on the
+  // colour that is actually emitted. Measuring the unrounded one returned a
+  // fill a hundredth under the floor: the bisection converged on the boundary
+  // and the rounding then stepped back across it.
+  const round = (value: number) => Math.round(Math.max(0, value));
+  const toBlack = (amount: number): Rgba => ({
+    r: round(rgba.r * (1 - amount)),
+    g: round(rgba.g * (1 - amount)),
+    b: round(rgba.b * (1 - amount)),
+    a: rgba.a,
+  });
+  const reads = (value: Rgba) => 1.05 / (luminance(value) + 0.05) >= floor;
+  if (reads(toBlack(0))) return format(toBlack(0));
+
+  // Bisection on how far towards black the fill is pulled. Sixteen rounds puts
+  // the answer within a fifteen thousandth of the least darkening that works,
+  // which is far below one step of an eight bit channel.
+  let enough = 1;
+  let short = 0;
+  for (let round = 0; round < 16; round++) {
+    const middle = (short + enough) / 2;
+    if (reads(toBlack(middle))) enough = middle;
+    else short = middle;
+  }
+  return format(toBlack(enough));
+}
+
 /**
  * How far the plugin's green sits from the host's. One knob for all three
  * places it is drawn: the done node, the settled badge and the submit button.
@@ -157,3 +219,22 @@ const MUTE = 0.4;
 /** The plugin's green. Always this, never `colors.statusSuccess` directly. */
 export const success = (statusSuccess: string) =>
   desaturate(statusSuccess, MUTE);
+
+/**
+ * How far the plugin's accent sits from the host's. Gentler than the green,
+ * because this one colours every link on the screen and a link has to stay
+ * apart from the text around it.
+ */
+const ACCENT_MUTE = 0.25;
+
+/**
+ * The plugin's accent.
+ *
+ * Paseo's light theme accents in a saturated green and its dark theme in a near
+ * grey, so the one pull towards grey is right for both: it quietens a hue and
+ * does nothing at all to something already grey. That is also its limit. A
+ * theme accenting in some other hue gets that hue quietened too, which is a
+ * choice this plugin is making for its own screens rather than something the
+ * host asked for.
+ */
+export const highlight = (accent: string) => desaturate(accent, ACCENT_MUTE);

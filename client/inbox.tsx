@@ -1,4 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
+import { highlight } from "../shared/colour";
 import { type PluginScreenProps } from "@getpaseo/plugin/client";
 import { ExternalLink } from "@getpaseo/plugin/client/ui";
 import { useMachine } from "./vendor/xstate-react.mjs";
@@ -98,7 +99,7 @@ function styleSheet(theme: PluginTheme, compact: boolean) {
       paddingTop: 2,
       alignItems: "center" as const,
     },
-    link: { color: colors.accent, fontSize: 12 },
+    link: { color: highlight(colors.accent), fontSize: 12 },
     action: { color: colors.foregroundMuted, fontSize: 12 },
     // Armed, not idle. The accent is the colour of every other link on the
     // screen, so an armed control read as one more thing to tap. Warning is

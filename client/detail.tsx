@@ -1,4 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
+import { highlight } from "../shared/colour";
 import type { PluginScreenProps } from "@getpaseo/plugin/client";
 import { ExternalLink } from "@getpaseo/plugin/client/ui";
 import { useMemo } from "react";
@@ -114,14 +115,14 @@ function styleSheet(theme: PluginTheme, compact: boolean) {
       alignItems: "center" as const,
       gap: 12,
     },
-    back: { color: colors.accent, fontSize: 13 },
+    back: { color: highlight(colors.accent), fontSize: 13 },
     title: {
       color: colors.foreground,
       fontSize: compact ? 15 : 16,
       flexShrink: 1,
     },
     linkTitle: {
-      color: colors.accent,
+      color: highlight(colors.accent),
       fontSize: compact ? 15 : 16,
       flexShrink: 1,
     },
@@ -157,7 +158,7 @@ function styleSheet(theme: PluginTheme, compact: boolean) {
       fontSize: 12,
       fontWeight: "600" as const,
     },
-    link: { color: colors.accent, fontSize: 12 },
+    link: { color: highlight(colors.accent), fontSize: 12 },
     // One row, links first, then the information. Wrapping rather than scrolling,
     // so a narrow window drops the tail onto a second line instead of hiding it.
     footer: {

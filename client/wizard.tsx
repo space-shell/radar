@@ -9,7 +9,7 @@ import {
 import { useMachine } from "./vendor/xstate-react.mjs";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { success } from "../shared/colour";
+import { carryWhite, highlight, success, WHITE } from "../shared/colour";
 import {
   anchorKey,
   anchorLabel,
@@ -51,6 +51,12 @@ function styleSheet(theme: PluginTheme, compact: boolean) {
     borderRadius: 6,
     borderWidth: 1,
   };
+  // Both fills are darkened by as little as it takes to carry white text, which
+  // is the pairing a filled control needs and the one the theme cannot supply:
+  // `accentForeground` is the foreground for the accent, and that is a near
+  // black wherever the accent is a near white. AC-AA9.
+  const fill = carryWhite(success(colors.statusSuccess));
+  const armedFill = carryWhite(colors.statusWarning);
   return {
     screen: {
       flex: 1,
@@ -63,7 +69,7 @@ function styleSheet(theme: PluginTheme, compact: boolean) {
       alignItems: "center" as const,
       gap: 12,
     },
-    back: { color: colors.accent, fontSize: 13 },
+    back: { color: highlight(colors.accent), fontSize: 13 },
     title: {
       color: colors.foreground,
       fontSize: compact ? 15 : 16,
@@ -101,7 +107,7 @@ function styleSheet(theme: PluginTheme, compact: boolean) {
       gap: 6,
       padding: 12,
       borderLeftWidth: 2,
-      borderLeftColor: colors.accent,
+      borderLeftColor: highlight(colors.accent),
     },
     excluded: {
       gap: 6,
@@ -128,25 +134,17 @@ function styleSheet(theme: PluginTheme, compact: boolean) {
     // the plugin drawn as a filled button. It is sized to its own label rather
     // than to the card: a full width bar is a row, and a row is what the rest of
     // this screen is made of. AC-AA1.
-    submit: {
-      ...button,
-      backgroundColor: success(colors.statusSuccess),
-      borderColor: success(colors.statusSuccess),
-    },
+    submit: { ...button, backgroundColor: fill, borderColor: fill },
     // Armed keeps the shape and changes the fill, so the second press lands on
     // the target the first one armed. AC-R1, AC-AA3.
     submitArmed: {
       ...button,
-      backgroundColor: colors.statusWarning,
-      borderColor: colors.statusWarning,
+      backgroundColor: armedFill,
+      borderColor: armedFill,
     },
     // On a fill, not on the page. The same weight in both states, so the word
     // does not reflow under the finger.
-    onFill: {
-      color: colors.accentForeground,
-      fontSize: 13,
-      fontWeight: "600" as const,
-    },
+    onFill: { color: WHITE, fontSize: 13, fontWeight: "600" as const },
     // Request changes is a real action but not the expected one, and two fills
     // side by side name no default between them. AC-G24.
     secondary: { ...button, borderColor: colors.border },
@@ -161,10 +159,10 @@ function styleSheet(theme: PluginTheme, compact: boolean) {
       borderTopColor: colors.border,
       paddingTop: 10,
     },
-    nav: { color: colors.accent, fontSize: 13 },
+    nav: { color: highlight(colors.accent), fontSize: 13 },
     navOff: { color: colors.foregroundMuted, fontSize: 13, opacity: 0.4 },
     counter: { color: colors.foregroundMuted, fontSize: 12 },
-    link: { color: colors.accent, fontSize: 13 },
+    link: { color: highlight(colors.accent), fontSize: 13 },
   };
 }
 

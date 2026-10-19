@@ -1,4 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
+import { highlight } from "../shared/colour";
 import { useEffect, useState } from "react";
 import { View } from "react-native";
 
@@ -63,7 +64,7 @@ export function BusyDots({ theme, label, size = 4 }: BusyDotsProps) {
                 width: size,
                 height: size,
                 borderRadius: 1,
-                backgroundColor: theme.colors.accent,
+                backgroundColor: highlight(theme.colors.accent),
                 opacity: levels[row * 3 + column],
               }}
             />

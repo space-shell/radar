@@ -1,5 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { success } from "../shared/colour";
+import { highlight, success } from "../shared/colour";
 import { Text, View } from "react-native";
 import {
   MAP_NODES,
@@ -33,9 +33,9 @@ export function nodeAppearance(
     case "running":
       return {
         glyph: "▸",
-        glyphColor: colors.accent,
+        glyphColor: highlight(colors.accent),
         background: colors.surface2,
-        borderColor: colors.accent,
+        borderColor: highlight(colors.accent),
         borderStyle: "solid",
       };
     case "done":
@@ -106,7 +106,7 @@ export function StageNode({
         borderRadius: Math.round(size / 4),
         borderWidth: current ? 2 : 1,
         borderStyle: look.borderStyle,
-        borderColor: current ? theme.colors.accent : look.borderColor,
+        borderColor: current ? highlight(theme.colors.accent) : look.borderColor,
         backgroundColor: look.background,
         alignItems: "center",
         justifyContent: "center",
