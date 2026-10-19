@@ -1,5 +1,6 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { Text, View } from "react-native";
+import { success } from "../shared/colour";
 import { statusNote, type IntakeRecord } from "../shared/inbox";
 
 /**
@@ -22,7 +23,7 @@ export function StatusBadge({
 
   const colour =
     note.tone === "settled"
-      ? theme.colors.statusSuccess
+      ? success(theme.colors.statusSuccess)
       : note.tone === "blocked"
         ? theme.colors.statusWarning
         : theme.colors.foregroundMuted;

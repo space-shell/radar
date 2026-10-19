@@ -1,4 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
+import { success } from "../shared/colour";
 import { Text, View } from "react-native";
 import {
   MAP_NODES,
@@ -41,8 +42,8 @@ export function nodeAppearance(
       return {
         glyph: "✓",
         glyphColor: colors.accentForeground,
-        background: colors.statusSuccess,
-        borderColor: colors.statusSuccess,
+        background: success(colors.statusSuccess),
+        borderColor: success(colors.statusSuccess),
         borderStyle: "solid",
       };
     case "skipped":

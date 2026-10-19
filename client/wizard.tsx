@@ -9,6 +9,7 @@ import {
 import { useMachine } from "./vendor/xstate-react.mjs";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
+import { success } from "../shared/colour";
 import {
   anchorKey,
   anchorLabel,
@@ -42,6 +43,14 @@ export interface WizardProps {
 
 function styleSheet(theme: PluginTheme, compact: boolean) {
   const { colors } = theme;
+  // One box for every submit control, so a fill and an outline sit at the same
+  // height and the row does not step as the approve switch moves.
+  const button = {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+  };
   return {
     screen: {
       flex: 1,
@@ -104,10 +113,9 @@ function styleSheet(theme: PluginTheme, compact: boolean) {
       flexDirection: "row" as const,
       alignItems: "center" as const,
       flexWrap: "wrap" as const,
-      gap: 16,
+      gap: 10,
       padding: 12,
     },
-    action: { color: colors.foregroundMuted, fontSize: 13 },
     // Armed, not idle. The accent is the colour of every other link on the
     // screen, so an armed control read as one more thing to tap. Warning is
     // what the second press is: the next tap does the thing. AC-R1.
@@ -116,6 +124,34 @@ function styleSheet(theme: PluginTheme, compact: boolean) {
       fontSize: 13,
       fontWeight: "600" as const,
     },
+    // The one press on this screen that reaches GitHub, and the only control in
+    // the plugin drawn as a filled button. It is sized to its own label rather
+    // than to the card: a full width bar is a row, and a row is what the rest of
+    // this screen is made of. AC-AA1.
+    submit: {
+      ...button,
+      backgroundColor: success(colors.statusSuccess),
+      borderColor: success(colors.statusSuccess),
+    },
+    // Armed keeps the shape and changes the fill, so the second press lands on
+    // the target the first one armed. AC-R1, AC-AA3.
+    submitArmed: {
+      ...button,
+      backgroundColor: colors.statusWarning,
+      borderColor: colors.statusWarning,
+    },
+    // On a fill, not on the page. The same weight in both states, so the word
+    // does not reflow under the finger.
+    onFill: {
+      color: colors.accentForeground,
+      fontSize: 13,
+      fontWeight: "600" as const,
+    },
+    // Request changes is a real action but not the expected one, and two fills
+    // side by side name no default between them. AC-G24.
+    secondary: { ...button, borderColor: colors.border },
+    secondaryArmed: { ...button, borderColor: colors.statusWarning },
+    secondaryLabel: { color: colors.foreground, fontSize: 13 },
     footer: {
       flexDirection: "row" as const,
       alignItems: "center" as const,
@@ -571,8 +607,10 @@ export function Wizard({
                 confirmLabel="Submit approval?"
                 busyLabel="Submitting"
                 theme={theme}
-                style={styles.action}
-                confirmStyle={styles.confirm}
+                style={styles.onFill}
+                confirmStyle={styles.onFill}
+                chrome={styles.submit}
+                confirmChrome={styles.submitArmed}
                 busy={busy}
                 disabled={busy}
                 onConfirm={() => submit.mutate("APPROVE")}
@@ -584,8 +622,10 @@ export function Wizard({
                   confirmLabel="Submit comment?"
                   busyLabel="Submitting"
                   theme={theme}
-                  style={styles.action}
-                  confirmStyle={styles.confirm}
+                  style={styles.onFill}
+                  confirmStyle={styles.onFill}
+                  chrome={styles.submit}
+                  confirmChrome={styles.submitArmed}
                   busy={busy}
                   disabled={busy}
                   onConfirm={() => submit.mutate("COMMENT")}
@@ -596,8 +636,10 @@ export function Wizard({
                   confirmLabel="Request changes?"
                   busyLabel="Submitting"
                   theme={theme}
-                  style={styles.action}
+                  style={styles.secondaryLabel}
                   confirmStyle={styles.confirm}
+                  chrome={styles.secondary}
+                  confirmChrome={styles.secondaryArmed}
                   busy={busy}
                   disabled={busy}
                   onConfirm={() => submit.mutate("REQUEST_CHANGES")}

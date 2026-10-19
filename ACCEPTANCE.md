@@ -549,6 +549,26 @@ somewhere, which cannot be the plugin directory because that is a git checkout.
 - [x] **AC-Z17** The daemon reads the document from the first tick. `registerSettings` is the first statement in `contribute`, before any handler is registered or any timer is started.
 - [ ] **AC-Z18** The screen looks right and the controls work. Awaiting the app.
 
+## AA. The submit controls are buttons, and the green is quieter
+
+James asked for the submit control to read as a thing to press rather than as another
+line of text, and for the plugin's green to come down a little. The two are one change:
+a filled button is the loudest green on the screen, so the fill is what forced the
+question of how loud the green should be.
+
+`ConfirmButton` drew text and nothing else, and took only `TextStyle`, so there was no
+way to express a fill without growing its surface. It now takes an optional `chrome`,
+which is the box behind the word. Absent, the control is exactly what it was.
+
+- [ ] **AC-AA1** The submit controls are buttons sized to their own labels, not bars across the card. `chrome` carries the padding and the radius, and `Steady` reserves the width of the widest of the three states, so the box does not resize between idle, armed and working.
+- [x] **AC-AA2** The expected press is the filled one. Submit approval and Submit comment carry the green fill with `accentForeground` on it; Request changes is outlined in `border` with ordinary foreground text, because two fills side by side name no default between them. AC-G24 still holds: it is its own control, not the fallback for an unchecked box.
+- [x] **AC-AA3** Arming changes the colour and not the shape. The fill becomes `statusWarning` and the outline's border and text do the same, so the second press lands on the target the first one armed. AC-R1 still holds, and so does group X: the armed state is still the warning colour, and the reserved width means nothing beside the control moves.
+- [x] **AC-AA4** The green is set in one place. `success()` in `shared/colour.ts` is the plugin's green, and all three draw sites call it: the done node, the settled badge and the submit fill. `colors.statusSuccess` appears nowhere in `client/` on its own.
+- [x] **AC-AA5** The mute holds the brightness. `desaturate` pulls a colour towards the weighted grey the eye reads as its brightness, so white text on the fill is as readable after the adjustment as before it. `probes/colour.mjs` C3 asserts the brightness is unchanged, the channel spread has narrowed, green is still the strongest channel, and alpha survives.
+- [x] **AC-AA6** A theme notation the helper cannot read costs the adjustment, never the colour. Hex in three lengths, `rgb`, `rgba`, `hsl` and `hsla` are parsed; anything else is returned exactly as it came. C1 asserts eleven notations read correctly, C2 that ten unreadable ones pass through untouched.
+- [x] **AC-AA7** Nothing else grew a button. `chrome` is optional and only the wizard passes it, so the row, the detail map and the summary card are the text controls they were. A screen of buttons names no action in particular, which is the problem this change was made to fix.
+- [ ] **AC-AA8** The button looks right and the green is quieter without being grey. Awaiting the app.
+
 ## Awaiting the app
 
 Every criterion below is built and typechecked. None can be ticked from here: each asserts
@@ -585,6 +605,7 @@ invocation command, so there is no route to them except the running app.
 | AC-X1 to AC-X5                 | One press on a confirm, one on the clock, one on each tab, watched for anything beside them moving              |
 | AC-Y7                          | Opening the plugin on an Android device, which is the only place the Hermes failure showed                      |
 | AC-Z18                         | Opening Settings, Radar: the pickers populated, one brief edited and reverted, one save, one Discard            |
+| AC-AA1, AC-AA8                 | A look at the wizard's last step, approve on and then off, with one control armed                              |
 
 ## Non-goals
 

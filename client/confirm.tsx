@@ -1,7 +1,13 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { useMachine } from "./vendor/xstate-react.mjs";
-import { useEffect, useMemo, useRef } from "react";
-import { Pressable, Text, View, type TextStyle } from "react-native";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import {
+  Pressable,
+  Text,
+  View,
+  type TextStyle,
+  type ViewStyle,
+} from "react-native";
 import { confirmMachine } from "../shared/machines/confirm";
 import { BusyDots, dotsWidth } from "./spinner";
 import { Steady } from "./steady";
@@ -17,6 +23,14 @@ export interface ConfirmButtonProps {
   theme: PluginTheme;
   style: TextStyle;
   confirmStyle: TextStyle;
+  /**
+   * The fill, border and padding drawn behind the word. Absent, the control is
+   * the bare text it has always been, which is what a row control still wants:
+   * a page of buttons names no action in particular. AC-AA1.
+   */
+  chrome?: ViewStyle;
+  /** The chrome of the armed state. Falls back to `chrome`. */
+  confirmChrome?: ViewStyle;
   busy?: boolean;
   disabled?: boolean;
   onConfirm(): void;
@@ -30,10 +44,17 @@ export function ConfirmButton({
   theme,
   style,
   confirmStyle,
+  chrome,
+  confirmChrome,
   busy,
   disabled,
   onConfirm,
 }: ConfirmButtonProps) {
+  const armedChrome = confirmChrome ?? chrome;
+  /** The word, in its box when it has one. The box is what takes the press. */
+  const shell = (box: ViewStyle | undefined, content: ReactNode) =>
+    box ? <View style={box}>{content}</View> : content;
+
   // The machine is created once. `fire` reads the callback through a ref so a new
   // `onConfirm` on a later render reaches the action without rebuilding the actor
   // and losing the armed state mid-window.
@@ -69,22 +90,30 @@ export function ConfirmButton({
    */
   const ruler = (
     <>
-      <Text style={style}>{label}</Text>
-      <Text style={confirmStyle}>{confirmLabel}</Text>
-      <View style={{ flexDirection: "row", gap: GAP }}>
-        <View style={{ width: dotsWidth() }} />
-        <Text style={style}>{busyLabel}</Text>
-      </View>
+      {shell(chrome, <Text style={style}>{label}</Text>)}
+      {shell(armedChrome, <Text style={confirmStyle}>{confirmLabel}</Text>)}
+      {shell(
+        chrome,
+        <View style={{ flexDirection: "row", gap: GAP }}>
+          <View style={{ width: dotsWidth() }} />
+          <Text style={style}>{busyLabel}</Text>
+        </View>,
+      )}
     </>
   );
 
   return (
     <Steady widest={ruler}>
       {busy ? (
-        <View style={{ flexDirection: "row", alignItems: "center", gap: GAP }}>
-          <BusyDots theme={theme} label={busyLabel} />
-          <Text style={style}>{busyLabel}</Text>
-        </View>
+        shell(
+          chrome,
+          <View
+            style={{ flexDirection: "row", alignItems: "center", gap: GAP }}
+          >
+            <BusyDots theme={theme} label={busyLabel} />
+            <Text style={style}>{busyLabel}</Text>
+          </View>,
+        )
       ) : (
         <Pressable
           accessibilityRole="button"
@@ -92,9 +121,12 @@ export function ConfirmButton({
           disabled={disabled}
           onPress={() => send({ type: "PRESS" })}
         >
-          <Text style={armed ? confirmStyle : style}>
-            {armed ? confirmLabel : label}
-          </Text>
+          {shell(
+            armed ? armedChrome : chrome,
+            <Text style={armed ? confirmStyle : style}>
+              {armed ? confirmLabel : label}
+            </Text>,
+          )}
         </Pressable>
       )}
     </Steady>
