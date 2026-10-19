@@ -1,0 +1,34 @@
+#!/bin/sh
+dir="${PROBE_FIXTURES:?}"
+case "$1" in
+  inspect)
+    file="$dir/agent-$2.json"
+    if [ ! -f "$file" ]; then
+      echo '{"error":{"code":"AGENT_NOT_FOUND"}}' >&2
+      exit 1
+    fi
+    if [ "$(head -c 7 "$file")" = "TIMEOUT" ]; then
+      echo 'request timed out' >&2
+      exit 1
+    fi
+    cat "$file"
+    ;;
+  ls)
+    # `ls --global --json`, the live agent list. A missing fixture is an empty
+    # world; a present `ls-fails` is an unreadable one.
+    if [ -f "$dir/ls-fails" ]; then
+      echo "daemon unreachable" >&2
+      exit 1
+    fi
+    if [ -f "$dir/agents.json" ]; then cat "$dir/agents.json"; else echo "[]"; fi
+    ;;
+  workspace)
+    # `workspace archive <id>`
+    if [ -f "$dir/archive-fails-$3" ]; then
+      echo "archive refused" >&2
+      exit 1
+    fi
+    echo "$3" >> "$dir/archived.log"
+    ;;
+  *) echo "unexpected argv: $*" >&2; exit 2 ;;
+esac

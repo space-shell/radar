@@ -1,0 +1,10 @@
+#!/bin/sh
+# `pr view <number> --repo <repo> --json state`. The fixture names the number.
+dir="${PROBE_FIXTURES:?}"
+number="$3"
+file="$dir/pr-$number.json"
+if [ ! -f "$file" ]; then
+  echo "could not resolve to a PullRequest with the number of $number" >&2
+  exit 1
+fi
+cat "$file"
