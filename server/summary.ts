@@ -1,7 +1,12 @@
 import { join } from "node:path";
 import { pullRequestUrl, type IntakeRecord } from "../shared/inbox";
 import { summaryFileSchema, type SummaryFile } from "../shared/summary";
-import { clearArtifact, prepareArtifact, readArtifact } from "./artifact";
+import {
+  clearArtifact,
+  MissingArtifact,
+  prepareArtifact,
+  readArtifact,
+} from "./artifact";
 import { log } from "./log";
 import { briefPath } from "./briefs";
 import { loadState, STATE_DIR, updateState } from "./state";
@@ -102,11 +107,64 @@ async function summarise(record: IntakeRecord, paseo: Paseo): Promise<void> {
 }
 
 /**
- * Asks the record's own agent for the summary the detail view renders.
+ * Takes in the summary files the intake turns wrote, one sweep over the ledger.
  *
- * It runs on a press, never on the screen opening: an agent turn spent because
- * a view was looked at is a cost James did not ask for, and every other
- * transition in this plugin follows a press. AC-K1.
+ * Intake asks for the file in the turn that already read the diff, so a record
+ * normally arrives with one and the detail view has something to render before
+ * anything is pressed. Nothing waits on that turn, so the file appears whenever
+ * the agent finishes: the tick looks rather than being told. AC-AB3.
+ *
+ * A record that already has a summary keeps it: a press is the only thing that
+ * replaces one. The file waiting for such a record is discarded unread rather
+ * than left alone, which is not tidiness. Left on disk it would be collected by
+ * a later sweep the moment anything cleared the stored summary, landing an
+ * intake's reading of an old diff on a record that had moved on.
+ *
+ * A file that is there and wrong is not the same event as no file at all. The
+ * first is the agent breaching the schema, which is recorded against the record
+ * and cleared so the next sweep does not report it again. The second is a turn
+ * that has not finished, or an agent that wrote nothing, and costs nothing to
+ * meet on every tick. AC-AB5.
+ */
+export async function collectSummaries(): Promise<number> {
+  const { intake } = await loadState();
+  let taken = 0;
+
+  for (const record of intake) {
+    // A press is mid-flight for this key: its own path stores the result and
+    // clears the file, and collecting underneath it would race that write.
+    if (inFlight.has(record.key)) continue;
+
+    const output = summaryPath(record.repo, record.number);
+    if (record.summary) {
+      await clearArtifact(output);
+      continue;
+    }
+
+    try {
+      const file = await readArtifact(output, summaryFileSchema, "summary");
+      await store(record.key, file);
+      await clearArtifact(output);
+      taken++;
+      log(`collected the summary for ${record.key}`);
+    } catch (caught) {
+      if (caught instanceof MissingArtifact) continue;
+      const error = caught instanceof Error ? caught.message : String(caught);
+      await setError(record.key, error);
+      await clearArtifact(output);
+      log(`discarded the summary file for ${record.key}: ${error}`);
+    }
+  }
+
+  return taken;
+}
+
+/**
+ * Rewrites the summary on a press, for a record whose intake wrote none or
+ * wrote one that has since gone stale. AC-K1.
+ *
+ * This is the second reading of the same diff and it is charged for every time,
+ * which is why it is a press and not something the screen does on opening.
  *
  * The press is answered as soon as the turn is under way. The plugin host
  * abandons any RPC at 30 seconds and a summary turn runs for minutes, so a

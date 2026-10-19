@@ -51,7 +51,10 @@ import { reconcileAgents } from "./server/reconcile";
 import { setupCommand } from "./server/setup";
 import { singleFlight } from "./server/single-flight";
 import { refreshStatuses } from "./server/status";
-import { runSummary as runSummaryFor } from "./server/summary";
+import {
+  collectSummaries,
+  runSummary as runSummaryFor,
+} from "./server/summary";
 import {
   checkAnchors,
   readFeedback,
@@ -343,6 +346,11 @@ async function tick(): Promise<number> {
   // out the ten minute search interval. Costs nothing when no stage is running.
   await reconcileStages();
   await reconcileAgents();
+
+  // The intake turns run in the background and nothing waits on them, so the
+  // summaries they write are met here rather than announced. One readFile per
+  // record still missing one, which is nothing on a ledger of this size.
+  await collectSummaries();
 
   const before = await loadState();
   const hint = await pollNotifications(before.githubLastModified);

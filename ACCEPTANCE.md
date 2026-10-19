@@ -202,15 +202,15 @@ The detail view's reading of the pull request, written by an agent in James' own
 rules. Separate from the review pipeline: it is what the pull request _is_, where the map
 is what has been done about it.
 
-- [ ] **AC-K1** The detail view shows the summary above the map: a headline, up to six change lines, a named risk and a scope gap. A press rewrites it. Half verified by construction: `runSummary` is reachable only from the RPC behind `ConfirmButton`, so opening the screen spends no agent turn.
-- [x] **AC-K2** _Retired 2026-10-16._ A record used to arrive with a summary the intake agent had written unprompted. It no longer does: see AC-U1. The intake prompt names one brief, and nothing collects a file the agent was never asked to write.
+- [ ] **AC-K1** The detail view shows the summary above the map: a headline, up to six change lines, a named risk and a scope gap. A press rewrites it. Half verified by construction: opening the screen still spends no agent turn, because `runSummary` is reachable only from the RPC behind `ConfirmButton` and the collector reads a file rather than asking for one.
+- [x] **AC-K2** _Retired 2026-10-16, restored 2026-10-19 as group AB._ A record arrives with a summary again, and this time the agent is asked for it rather than writing one unprompted: the intake prompt names the summary brief and the path to write to.
 - [x] **AC-K3** A summary breaching the diction rules is refused on read, naming the word that did it, rather than being shown as written. Verified live 2026-10-16 against the real schema: an em dash, `significant`, `substantially`, `It's possible that`, `just`, `your` and `notable` in a change line were each rejected by name; an empty change list, a seventh change line, a blank field and a 201 character headline were rejected by shape; a clean file passed.
 - [ ] **AC-K4** A record with no summary says so and offers the control, rather than showing an empty card or nothing at all.
 - [ ] **AC-K5** The summary scrolls with the map rather than pinning above it, so a long one pushes the map down instead of squeezing it.
 - [x] **AC-K6** Generating a summary posts nothing anywhere and creates no agent. Verified by construction: `server/summary.ts` reaches GitHub through nothing, and `askAgent` is the only call it makes, which refuses rather than creating. `briefs/summary.md` carries the same five hard rules as the QA brief.
 - [x] **AC-K7** A double press cannot send two turns. Verified by construction: the in-flight key set is claimed before the first await, the same guard as AC-A5.
 - [x] **AC-K8** A failed run leaves the previous summary intact. Verified by construction: the record is written only from a file that has already parsed and passed the diction rules, so nothing a failed run produces can land on it.
-- [x] **AC-K9** _Retired 2026-10-16 with AC-K2._ The tick had a collector, and it was verified: of four records, the valid file was stored and removed, a diction breach and a malformed file were discarded with their reason logged, and a second pass changed nothing. Nothing writes that file unprompted now, so the collector and its probe are gone rather than left as a path with no producer.
+- [x] **AC-K9** _Retired 2026-10-16, restored 2026-10-19 as AC-AB3 and AC-AB5._ The tick has a collector again, and a producer to go with it.
 
 ## L. Engagement ledger
 
@@ -412,6 +412,14 @@ actually issued.
 
 ## U. A summary costs a turn only when asked for
 
+_Superseded 2026-10-19 by group AB, at James' request. The reasoning below held
+for the cost of a turn and missed what it bought: a record that arrives with no
+summary shows "No summary yet." and makes reading it a press and a wait. The
+replacement keeps the saving the group was after, because the summary is written
+in the turn that has already read the diff rather than by a turn of its own.
+AC-U1 through AC-U4 are reversed; the probes that asserted them now assert the
+opposite and are listed under AB._
+
 Every intake spent a second reading on a four-field summary, whether or not the
 detail view was ever opened. The agent's message already says what the pull
 request does; the summary is the same reading again, in a shape the screen can
@@ -422,7 +430,7 @@ ones dismissed in a glance.
 - [x] **AC-U2** The intake brief permits one write, the message, where it used to permit two. The summary section is gone from it rather than softened, so there is no instruction an agent could follow on its own initiative.
 - [x] **AC-U3** Nothing on the tick reads a summary file. Verified by probe: `collectSummaries` is absent from the module's exports, deleted rather than merely uncalled, so no path exists that could take one in.
 - [x] **AC-U4** `runSummary`, behind the detail view's `ConfirmButton`, is the only way a summary is ever written. Verified by construction: it is the single remaining caller of the summary brief and the only writer of `record.summary`.
-- [ ] **AC-U5** A record taken in after this change shows "No summary yet." and the Summarise control, and pressing it produces one. The absent state and the control already existed for records that predated summaries; this makes them the ordinary case. Awaiting the app, and a new review request.
+- [ ] **AC-U5** _Withdrawn with the group._ A record taken in after this change shows "No summary yet." and the Summarise control. That is now the failure case rather than the ordinary one: see AC-AB6.
 
 ## V. A finished pull request is not a fault
 
@@ -578,6 +586,28 @@ the light theme's `accent` is `#20744A`, which is why the links were green as we
 - [ ] **AC-AA12** The button looks right, and the green and the links are quieter without being grey. Awaiting the app.
 - [x] **AC-AA13** Every mute lands in one band of saturation. The first attempt set the two amounts independently and by eye, and the accent came out at a chroma of 30.8 against the status greens' 24.4 and 18.7. The result was a screen where the badge and the finished node had plainly moved while the links, the back control and the running node's border still read as the untouched green, which is what James reported twice. The accent is now pulled 55% and lands at 19.2. C6 asserts all three sit between 15 and 26, that each is a drop of more than 10 from what the theme supplied, that the accent is still a green rather than a grey, and that none of it costs contrast: holding luminance means the light accent reads 6.19 on white, against 5.74 before any of this.
 
+## AB. A record arrives with its summary
+
+Group U made the summary a press, to stop every intake paying a second reading
+for a record that might be dismissed at a glance. What that cost was the thing
+the detail view is for: a record arrived saying "No summary yet.", and reading
+it meant a press and a wait of minutes.
+
+The saving survives the reversal, because the expensive part was never the
+summary. It was reading the diff twice. Intake already reads it for the message,
+so the file is one more write in a turn that is running anyway. A press is still
+the way to rewrite a summary that has gone stale, and that press is still the
+second reading that group U objected to, now charged only when it is asked for.
+
+- [x] **AC-AB1** Intake asks for both writes in one turn. Verified by probe against the real `launchArgs`: the prompt names the operating brief, the summary brief, the record key and the real output path, in a single prompt to a single agent.
+- [x] **AC-AB2** The summary brief is named, not restated. One file holds the schema, the field ceilings and the diction rules, so an edited brief governs the automatic path and the Summarise press alike. Verified by probe: no field name appears in the intake prompt.
+- [x] **AC-AB3** The tick collects what the turn wrote. Nothing waits on a background intake, so the file is met rather than announced: one read per record still missing a summary. Verified by probe, including that a second sweep over the same ledger does no work.
+- [x] **AC-AB4** A launch clears the previous file for that pull request before it starts, so a file left by an earlier launch cannot be collected as this one's output.
+- [x] **AC-AB5** A file that is there and wrong is not a turn that has not finished. No file is no event and records no error. A diction breach and malformed JSON are each discarded with the reason written to the record and the file cleared, so a bad file is reported once rather than on every tick. Verified by probe against the real schema: `significant` in the risk field was named.
+- [x] **AC-AB6** A summary already stored wins, and the file that lost is discarded unread. This was a real defect found by the probe: skipping the record left the file on disk, where the next sweep to find that record without a summary would take it in, landing an intake's reading of an old diff on a record that had moved on.
+- [x] **AC-AB7** A press in flight holds its key against the collector, so the two cannot both write a summary for one record. Verified by probe with a turn held open.
+- [ ] **AC-AB8** The next review request to arrive shows its summary on the detail view without anything being pressed. Awaiting the app, and a new review request.
+
 ## Awaiting the app
 
 Every criterion below is built and typechecked. None can be ticked from here: each asserts
@@ -599,7 +629,7 @@ invocation command, so there is no route to them except the running app.
 | AC-J1, AC-J7                   | A row tap, then a tap on an inert node                                                                          |
 | AC-J9                          | The detail at the compact breakpoint                                                                            |
 | AC-K1, AC-K4, AC-K5            | A look at the detail view, with and without a summary, then one Summarise press                                 |
-| AC-K2                          | The next review request to arrive, read before anything is pressed                                              |
+| AC-K2, AC-AB8                  | The next review request to arrive, read before anything is pressed                                              |
 | AC-G2, AC-G6, AC-G22, AC-G24   | One walk through the wizard on a record with findings, including a `blocking` one, left and re-entered part way |
 | AC-G10, AC-G15, AC-G16, AC-G25 | One real submit, read against the pull request's own review list                                                |
 | AC-L1 wiring                   | One real arrival, one stage run and one dismiss, read against the week file                                     |

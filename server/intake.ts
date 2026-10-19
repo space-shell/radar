@@ -1,7 +1,9 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { execCommand } from "@getpaseo/plugin/server";
+import { clearArtifact, prepareArtifact } from "./artifact";
 import { briefPath } from "./briefs";
+import { summaryPath } from "./summary";
 import { baseAgent, providerString, type AgentSpec } from "../shared/settings";
 import { loadConfig } from "./settings";
 import { setupLines } from "./setup";
@@ -21,8 +23,15 @@ export interface LaunchResult {
 }
 
 export interface Briefs {
-  /** The operating brief, and the only one intake carries. */
+  /** The operating brief: what the one message has to say. */
   intake: string;
+  /**
+   * The summary brief, carried so the same turn can write the detail view's
+   * file. It is the file the Summarise press uses, named here rather than
+   * restated, so an edited brief governs both paths and the schema is written
+   * down once. AC-AB2.
+   */
+  summary: string;
 }
 
 function prompt(
@@ -34,6 +43,13 @@ function prompt(
     `Read ${briefs.intake} and follow it exactly.`,
     `Pull request: ${target.repo} #${target.number}, "${target.title}".`,
     `URL: ${target.url}`,
+    "",
+    // The second write, in the turn that has already read the diff. Asking for
+    // it later costs a whole turn to read the same diff again, which is what
+    // the press-only arrangement charged for every record James opened. AC-AB1.
+    `Then write the summary file described in ${briefs.summary}.`,
+    `Record key: ${target.repo}#${target.number}`,
+    `Write it to: ${summaryPath(target.repo, target.number)}`,
     ...setupLines(setup),
   ].join("\n");
 }
@@ -78,7 +94,11 @@ export function launchArgs(
 }
 
 export async function briefPaths(): Promise<Briefs> {
-  return { intake: await briefPath("intake") };
+  const [intake, summary] = await Promise.all([
+    briefPath("intake"),
+    briefPath("summary"),
+  ]);
+  return { intake, summary };
 }
 
 const absolute = (path: string) =>
@@ -128,6 +148,14 @@ export async function launchIntake(
   setup: string | null,
 ): Promise<LaunchResult> {
   const agent = baseAgent(await loadConfig());
+
+  // The agent has no write tool pointed outside the worktree until the tree is
+  // there, and a file left by an earlier launch for this same pull request must
+  // not be collected as this one's output. AC-AB4.
+  const output = summaryPath(target.repo, target.number);
+  await prepareArtifact(output);
+  await clearArtifact(output);
+
   await execCommand(
     await paseoBin(),
     launchArgs(target, checkout, briefs, setup, agent),

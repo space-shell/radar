@@ -10,7 +10,7 @@ const check = (ok, name, detail = "") => {
 };
 
 const target = { repo: "owner/web", number: 42, title: "Cache the lookup", url: "https://github.com/owner/web/pull/42" };
-const briefs = { intake: "/plugin/briefs/pr-intake.md" };
+const briefs = { intake: "/plugin/briefs/pr-intake.md", summary: "/plugin/briefs/summary.md" };
 
 const args = launchArgs(target, "/clones/web", briefs, "nix develop -c zsh", DEFAULT_AGENT);
 const prompt = args[args.length - 1];
@@ -32,18 +32,22 @@ const bare_spec = launchArgs(target, "/clones/web", briefs, null, { provider: "c
 check(bare_spec[bare_spec.indexOf("--provider") + 1] === "codex/gpt-6.1-sol", "A10 another provider is passed through");
 check(!bare_spec.includes("--thinking") && !bare_spec.includes("--mode"), "A11 and an empty default is left unsaid", bare_spec.join(" "));
 
-// The prompt. One brief, one message, and no summary. AC-U1, AC-U2.
+// The prompt. Two briefs, one turn, two writes. AC-AB1, AC-AB2.
 check(prompt.includes("/plugin/briefs/pr-intake.md"), "B1 the operating brief is named");
-check(!/summary/i.test(prompt), "B2 the prompt asks for no summary", prompt);
-check(!prompt.includes(".json"), "B3 and names no file for one to be written to", prompt);
-check(prompt.includes("owner/web #42"), "B4 the pull request is named");
-check(prompt.includes(target.url), "B5 with its URL");
-check(prompt.includes("nix develop -c zsh"), "B6 the development environment is named");
-check(Object.keys(briefs).length === 1, "B7 a launch carries one brief");
+check(prompt.includes("/plugin/briefs/summary.md"), "B2 and so is the summary brief", prompt);
+// Named rather than restated: the schema, the ceilings and the diction rules live
+// in one file, so an edited brief governs the automatic path and the press alike.
+check(!/headline|changes|risk|scope/i.test(prompt), "B3 whose contents are not copied into the prompt", prompt);
+check(prompt.includes(summary.summaryPath("owner/web", 42)), "B4 the file to write is named, by its real path", prompt);
+check(prompt.includes("Record key: owner/web#42"), "B5 keyed to the record the collector will match");
+check(prompt.includes("owner/web #42"), "B6 the pull request is named");
+check(prompt.includes(target.url), "B7 with its URL");
+check(prompt.includes("nix develop -c zsh"), "B8 the development environment is named");
+check(Object.keys(briefs).length === 2, "B9 a launch carries both briefs");
 
-// Nothing on the tick can take in a summary file. AC-U3.
-check(!("collectSummaries" in summary), "C1 the unprompted collector is gone, not merely uncalled");
-check(typeof summary.runSummary === "function", "C2 the press is the way a summary is written");
+// The tick takes the file in. AC-AB3.
+check(typeof summary.collectSummaries === "function", "C1 the tick has a collector again");
+check(typeof summary.runSummary === "function", "C2 and a press still rewrites one");
 
 // A launch with no development environment configured says nothing about one.
 const bare = launchArgs(target, "/clones/web", briefs, null, DEFAULT_AGENT);
