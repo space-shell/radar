@@ -225,7 +225,18 @@ export const success = (statusSuccess: string) =>
  * because this one colours every link on the screen and a link has to stay
  * apart from the text around it.
  */
-const ACCENT_MUTE = 0.25;
+/**
+ * Set against the chroma the other mute produces, not picked by eye. `MUTE`
+ * takes the two status greens to a chroma of 24.4 and 18.7; at 0.25 the accent
+ * landed at 30.8, more saturated than either, which is why the links, the back
+ * control and the running node still read as the untouched green once the
+ * badge and the finished node had visibly moved. 0.55 puts it at 19.4, in the
+ * same range as the rest. AC-AA13.
+ *
+ * Luminance is held by the pull, so none of this costs contrast: the light
+ * accent reads 5.74 on white before and 6.2 after.
+ */
+const ACCENT_MUTE = 0.55;
 
 /**
  * The plugin's accent.

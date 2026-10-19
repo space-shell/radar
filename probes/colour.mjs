@@ -55,6 +55,21 @@ check("C4 an unreadable theme green still renders", success("oklch(0.7 0.2 150)"
 // comes back at its own value.
 const lin = (c) => { const p = c / 255; return p <= 0.04045 ? p / 12.92 : Math.pow((p + 0.055) / 1.055, 2.4); };
 const contrast = (text) => { const [r, g, b] = text.match(/[\d.]+/g).slice(0, 3).map(Number); return 1.05 / (0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b) + 0.05); };
+/**
+ * How saturated a colour is, in CIE Lab, which is the measure the mutes are set
+ * against. Channel distance is not it: two colours a long way apart in rgb can
+ * look equally loud, and that is what made the first accent mute look like no
+ * mute at all. The theme's own neutrals sit between 3 and 6 here.
+ */
+const chroma = (text) => {
+  const raw = text.startsWith("#") ? [1, 3, 5].map((at) => parseInt(text.slice(at, at + 2), 16)) : text.match(/[\d.]+/g).slice(0, 3).map(Number);
+  const [r, g, b] = raw.map(lin);
+  const white = [0.95047, 1, 1.08883];
+  const xyz = [(0.4124 * r + 0.3576 * g + 0.1805 * b), (0.2126 * r + 0.7152 * g + 0.0722 * b), (0.0193 * r + 0.1192 * g + 0.9505 * b)];
+  const f = (value) => (value > 0.008856 ? Math.cbrt(value) : 7.787 * value + 16 / 116);
+  const [fx, fy, fz] = xyz.map((value, index) => f(value / white[index]));
+  return Math.hypot(500 * (fx - fy), 200 * (fy - fz));
+};
 check("C5 white is what the fill is paired with", WHITE, "#ffffff");
 check("C5 black is already dark enough", carryWhite("#000000"), "rgb(0, 0, 0)");
 check("C5 white is not, and is darkened until it reads", contrast(carryWhite("#ffffff")) >= 4.5, true);
@@ -73,11 +88,22 @@ const dark = { statusSuccess: "#3e704a", statusWarning: "#7b5d39", accent: "#e4e
 check("C6 light: the button fill carries white", [carryWhite(success(light.statusSuccess)), contrast(carryWhite(success(light.statusSuccess))) >= 4.5], ["rgb(95, 126, 102)", true]);
 check("C6 dark: already dark enough, so the mute is all that happens", [carryWhite(success(dark.statusSuccess)), success(dark.statusSuccess)], ["rgb(77, 107, 84)", "rgb(77, 107, 84)"]);
 check("C6 both armed fills carry white too", [contrast(carryWhite(light.statusWarning)) >= 4.5, contrast(carryWhite(dark.statusWarning)) >= 4.5], [true, true]);
-check("C6 light: the green accent is quietened", highlight(light.accent), "rgb(48, 111, 79)");
-check("C6 dark: a grey accent is left where it was", highlight(dark.accent), "rgb(228, 228, 230)");
-check("C6 and the grey moves by less than one step of a channel", (() => { const [r, g, b] = highlight(dark.accent).match(/\d+/g).map(Number); return Math.max(Math.abs(r - 228), Math.abs(g - 228), Math.abs(b - 231)) <= 1; })(), true);
-check("C6 the accent mute is gentler than the green's", [highlight("#6cb17b"), success("#6cb17b")], ["rgb(121, 172, 132)", "rgb(128, 170, 137)"]);
-check("C6 gentler means nearer the colour it started from", (() => { const away = (text) => Math.abs(Number(text.match(/\d+/g)[1]) - 177); return away(highlight("#6cb17b")) < away(success("#6cb17b")); })(), true);
+check("C6 light: the green accent is quietened", highlight(light.accent), "rgb(67, 105, 86)");
+check("C6 dark: a grey accent is left where it was", highlight(dark.accent), "rgb(228, 228, 229)");
+// Stated as chroma rather than as a channel distance, because the amount that
+// may be pulled out of a grey is nothing, whatever the mute is set to, and a
+// channel tolerance has to be rewritten every time the mute moves.
+check("C6 and there was no saturation in it to take", [chroma(dark.accent), chroma(highlight(dark.accent))].every((value) => value < 2), true);
+// Both mutes are set to land in one band of chroma, because a surface left more
+// saturated than its neighbours reads as the untouched colour however far it has
+// actually moved. That is what the first attempt got wrong: the accent came out
+// at 30.8 against the status greens' 24.4 and 18.7, so the links and the back
+// control still looked like the old green beside a badge that plainly was not.
+// AC-AA13.
+check("C6 every mute lands in one band of chroma", [chroma(highlight(light.accent)), chroma(success(light.statusSuccess)), chroma(success(dark.statusSuccess))].every((value) => value > 15 && value < 26), true);
+check("C6 and every one of them is a real move from the theme's own", [[light.accent, highlight(light.accent)], [light.statusSuccess, success(light.statusSuccess)], [dark.statusSuccess, success(dark.statusSuccess)]].every(([was, now]) => chroma(was) - chroma(now) > 10), true);
+check("C6 holding the hue: the accent is still a green", (() => { const [r, g, b] = highlight(light.accent).match(/\d+/g).map(Number); return g > r && g > b; })(), true);
+check("C6 and quietening costs no contrast on the surface it sits on", contrast(highlight(light.accent)) >= 4.5, true);
 
 console.log(failures === 0 ? "\nall pass" : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);
