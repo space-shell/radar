@@ -106,7 +106,9 @@ export function StageNode({
         borderRadius: Math.round(size / 4),
         borderWidth: current ? 2 : 1,
         borderStyle: look.borderStyle,
-        borderColor: current ? highlight(theme.colors.accent) : look.borderColor,
+        borderColor: current
+          ? highlight(theme.colors.accent)
+          : look.borderColor,
         backgroundColor: look.background,
         alignItems: "center",
         justifyContent: "center",
@@ -125,19 +127,37 @@ interface ConnectorProps {
   theme: PluginTheme;
   vertical?: boolean;
   length?: number;
+  /**
+   * Take whatever room is left rather than a fixed length. The vertical rail on
+   * the detail map runs beside a node whose height is whatever its own contents
+   * expanded to, so a fixed length left the line short of the next node by
+   * however far that node had grown. AC-AD5.
+   */
+  fill?: boolean;
 }
 
-/** The line between two nodes. What makes the five read as one route. AC-J2. */
+/**
+ * The line between two nodes. What makes the five read as one route. AC-J2.
+ *
+ * It draws the line and nothing around it: a connector that carried its own
+ * margin left a gap at each end, which is a line that points at two nodes
+ * rather than one that joins them. Spacing is the caller's, and the caller's
+ * answer is that there is none. AC-AD4.
+ */
 export function Connector({
   theme,
   vertical = false,
   length = 6,
+  fill = false,
 }: ConnectorProps) {
   return (
     <View
       style={{
-        width: vertical ? 1 : length,
-        height: vertical ? length : 1,
+        width: vertical ? 1 : fill ? undefined : length,
+        height: vertical ? (fill ? undefined : length) : 1,
+        // Fills the main axis of whatever column or row holds it, which is the
+        // length of the line. The cross axis stays the one point above.
+        flex: fill ? 1 : undefined,
         backgroundColor: theme.colors.border,
       }}
     />
@@ -163,14 +183,15 @@ export function StageStrip({ record, theme, size = 14 }: StageStripProps) {
       accessibilityLabel={MAP_NODES.map((node) =>
         nodeLabel(node, nodeStatus(record, node)),
       ).join(", ")}
-      style={{ flexDirection: "row", alignItems: "center", gap: 3 }}
+      // No gap, in either row. A three point gap each side of every connector
+      // left the line floating between two squares it never reached, which is
+      // the one thing a metro line has to do. The connector's own length is
+      // what sets the five apart now. AC-AD4.
+      style={{ flexDirection: "row", alignItems: "center" }}
     >
       {MAP_NODES.map((node, index) => (
-        <View
-          key={node}
-          style={{ flexDirection: "row", alignItems: "center", gap: 3 }}
-        >
-          {index > 0 ? <Connector theme={theme} /> : null}
+        <View key={node} style={{ flexDirection: "row", alignItems: "center" }}>
+          {index > 0 ? <Connector theme={theme} length={6} /> : null}
           <StageNode
             status={nodeStatus(record, node)}
             theme={theme}

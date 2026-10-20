@@ -39,7 +39,6 @@ import { SummaryCard } from "./summary";
 
 /** Big enough for its glyph to read at arm's length, small enough for five in a column. */
 const NODE_SIZE = 22;
-const RAIL_LENGTH = 12;
 
 type Navigation = PluginScreenProps["navigation"];
 type Layout = PluginScreenProps["layout"];
@@ -140,19 +139,40 @@ function styleSheet(theme: PluginTheme, compact: boolean) {
     },
     scroll: { gap: 12 },
     map: { paddingVertical: 4 },
-    // Half a node wide, so the rail runs through the centre of the squares above
-    // and below it rather than down their left edge.
-    rail: { paddingLeft: NODE_SIZE / 2 },
-    nodeRow: {
+    /**
+     * One node: a gutter holding the square and the rail below it, beside a body
+     * holding everything the node says.
+     *
+     * `stretch` is what makes the map a map. The two columns are the same height
+     * whatever the body grows to, so the rail, which fills what the square leaves
+     * of the gutter, always ends exactly where the next square begins. The rail
+     * used to be a fixed twelve points sitting between two nodes, so expanding
+     * one opened a gap the length of whatever it had just revealed. AC-AD5.
+     */
+    nodeBlock: {
+      flexDirection: "row" as const,
+      alignItems: "stretch" as const,
+      gap: 10,
+    },
+    /** A node wide and centred, so the one point rail runs through the square's
+     * own centre line rather than beside it. AC-AD6. */
+    gutter: { width: NODE_SIZE, alignItems: "center" as const },
+    /**
+     * Everything the node says. The bottom padding is the gap between one square
+     * and the next, and it is here rather than between the blocks because the
+     * rail has to span it: spacing outside the block is spacing the line cannot
+     * reach across.
+     */
+    nodeBody: { flex: 1, gap: 4, paddingBottom: 10 },
+    /** As tall as the square beside it, so the label sits on the square's centre. */
+    nodeHeader: {
       flexDirection: "row" as const,
       alignItems: "center" as const,
       gap: 10,
-      paddingVertical: 3,
+      minHeight: NODE_SIZE,
     },
     nodeLabel: { color: colors.foreground, fontSize: 14 },
     nodeStatus: { color: colors.foregroundMuted, fontSize: 12 },
-    // Indented to the rail, so everything a node says sits under that node.
-    nodeAside: { paddingLeft: NODE_SIZE + 10, gap: 4, paddingBottom: 4 },
     nodeTiming: { color: colors.foregroundMuted, fontSize: 12 },
     nodeNote: { color: colors.foreground, fontSize: 12 },
     nodeError: { color: colors.statusDanger, fontSize: 12 },
@@ -437,42 +457,50 @@ export function Detail({
               actions.length > 0 || node === "feedback" || agentLink;
 
             return (
-              <View key={node}>
-                {index > 0 ? (
-                  <View style={styles.rail}>
-                    <Connector theme={theme} vertical length={RAIL_LENGTH} />
-                  </View>
-                ) : null}
-
-                <Pressable
-                  accessibilityRole="button"
-                  // Keyed on whether the node opens, not on whether it has a
-                  // confirm action. A pending feedback node has no action and
-                  // still opens onto the wizard, so announcing "no action
-                  // available" talked a screen reader past the one thing on it.
-                  accessibilityLabel={`${STAGE_LABELS[node]}, ${statusWord(status, isCurrent)}${
-                    expandable ? "" : ", nothing to open"
-                  }`}
-                  disabled={!expandable}
-                  onPress={() => onExpand(node)}
-                >
-                  <View
-                    style={[styles.nodeRow, blocked ? { opacity: 0.45 } : null]}
-                  >
+              <View key={node} style={styles.nodeBlock}>
+                <View style={styles.gutter}>
+                  {/* Dimmed on its own rather than with the block, so an
+                      unreachable stop goes quiet without taking the track
+                      below it with it. The route stays one line. */}
+                  <View style={blocked ? { opacity: 0.45 } : null}>
                     <StageNode
                       status={status}
                       theme={theme}
                       current={isCurrent}
                       size={NODE_SIZE}
                     />
-                    <Text style={styles.nodeLabel}>{STAGE_LABELS[node]}</Text>
-                    <Text style={styles.nodeStatus}>
-                      {statusWord(status, isCurrent)}
-                    </Text>
                   </View>
-                </Pressable>
+                  {index < MAP_NODES.length - 1 ? (
+                    <Connector theme={theme} vertical fill />
+                  ) : null}
+                </View>
 
-                <View style={styles.nodeAside}>
+                <View style={styles.nodeBody}>
+                  <Pressable
+                    accessibilityRole="button"
+                    // Keyed on whether the node opens, not on whether it has a
+                    // confirm action. A pending feedback node has no action and
+                    // still opens onto the wizard, so announcing "no action
+                    // available" talked a screen reader past the one thing on it.
+                    accessibilityLabel={`${STAGE_LABELS[node]}, ${statusWord(status, isCurrent)}${
+                      expandable ? "" : ", nothing to open"
+                    }`}
+                    disabled={!expandable}
+                    onPress={() => onExpand(node)}
+                  >
+                    <View
+                      style={[
+                        styles.nodeHeader,
+                        blocked ? { opacity: 0.45 } : null,
+                      ]}
+                    >
+                      <Text style={styles.nodeLabel}>{STAGE_LABELS[node]}</Text>
+                      <Text style={styles.nodeStatus}>
+                        {statusWord(status, isCurrent)}
+                      </Text>
+                    </View>
+                  </Pressable>
+
                   {/* What the stage produced, in a few words. "7 findings". No tap. */}
                   {stage?.note ? (
                     <Text style={styles.nodeNote}>{stage.note}</Text>

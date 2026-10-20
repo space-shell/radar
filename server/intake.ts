@@ -165,16 +165,29 @@ export async function launchIntake(
 }
 
 /**
- * Every agent the daemon still holds. Archived agents are absent, which is what
- * makes this the cheap liveness check: one call covers every record. R3.
+ * Every agent the daemon still holds, each with the status the CLI reports.
+ * Archived agents are absent, which is what makes this the cheap liveness check:
+ * one call covers every record. R3.
+ *
+ * The status rides along because the one call already carries it. Knowing which
+ * agents are mid-turn is what lets the detail view say a summary is coming
+ * rather than show an empty card for the minutes an intake turn takes, and it
+ * costs nothing on top of a check the tick already makes. AC-AD3.
  */
-export async function liveAgentIds(): Promise<Set<string>> {
-  const agents = await lookupJson<{ id?: string }>([
+export async function agentStatuses(): Promise<Map<string, string>> {
+  const agents = await lookupJson<{ id?: string; status?: string }>([
     "ls",
     "--global",
     "--json",
   ]);
-  return new Set(
-    agents.map((agent) => agent.id).filter((id): id is string => Boolean(id)),
-  );
+  const statuses = new Map<string, string>();
+  for (const agent of agents) {
+    if (agent.id) statuses.set(agent.id, agent.status ?? "");
+  }
+  return statuses;
+}
+
+/** Every agent the daemon still holds, without their statuses. R3. */
+export async function liveAgentIds(): Promise<Set<string>> {
+  return new Set((await agentStatuses()).keys());
 }

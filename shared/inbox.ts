@@ -282,8 +282,10 @@ export const readInbox = defineRpc({
     /** Records the server could not parse. Surfaced rather than hidden. R10. */
     unreadable: z.number(),
     /**
-     * Keys with a summary turn in flight. The press that started it returned long
-     * ago, so the daemon is the only thing that knows this is still running. AC-Q3.
+     * Keys with a summary on its way: a press whose turn is still running, and a
+     * record whose intake agent is still working and has written nothing yet.
+     * Neither is visible from the screen, so the daemon is the only thing that
+     * can say so. AC-Q3, AC-AD2.
      */
     summarising: z.array(z.string()),
     records: z.array(intakeRecordSchema),

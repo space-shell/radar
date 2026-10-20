@@ -637,6 +637,40 @@ already opens.
 - [ ] **AC-AC12** The dot appears on the sidebar within 30 seconds of a review request arriving with Radar closed, and clears on opening the record. Awaiting the app.
 - [ ] **AC-AC13** The per-step control is absent on a record whose QA inherited intake's agent, and present and correctly named on one whose settings gave QA a model of its own. Awaiting the app.
 
+## AD. The summary writes itself, and the line joins the stops
+
+Three things James named after watching a record arrive.
+
+The summary button is the first. It was built when a summary cost a press, and
+it has outlived that: intake writes one inside the turn that already read the
+diff, so the control offered to pay for a second reading of a diff nothing had
+said was stale. What a button is still for is the case intake cannot cover, an
+agent that stopped having written nothing or having written something the
+schema refused, which is the only moment a press is the difference between a
+summary and no summary.
+
+The second is what fills the gap it leaves. An intake turn runs for minutes and
+the card said "No summary yet." throughout, which reads as a summary that is
+not coming rather than one that has not arrived. Nothing on the screen started
+that turn, so the only evidence it is running is the agent's own status, which
+the tick already fetches for its liveness check.
+
+The third is the metro map. The lines did not reach the stops in either
+direction, and the vertical gap grew with whatever a node was expanded to show,
+because the rail was a fixed twelve point segment placed between two blocks
+rather than a line that spans one.
+
+- [x] **AC-AD1** The summary card has no control in any state but one: no summary, and nothing running. Refresh beside a summary already written is gone, and so is Summarise beside a card still filling. The remaining control reads "Retry" when a reason is stored and "Summarise" when the agent simply wrote nothing.
+- [x] **AC-AD2** While a summary is on its way the card says so, in the place the summary will appear, with the same working indicator the rest of the plugin uses. It covers both ways one arrives: an intake turn nothing here started, and a press.
+- [x] **AC-AD3** Whether an agent is mid-turn is read off the `paseo ls --global --json` the liveness check already makes each tick, so knowing it costs no second call. `running` and `initializing` are working, matching the rule `inspectAgent` applies to one agent. The answer is at most one tick old, and the two things it gates settle on that same tick, so it cannot contradict what is on screen.
+- [x] **AC-AD4** The horizontal strip's connector touches both squares. A three point gap each side left the line floating between two stops it never reached. Spacing between the five is now the connector's own length and nothing else.
+- [x] **AC-AD5** The vertical rail fills its node's height rather than taking a fixed length, so it ends exactly where the next square begins whatever the node above expanded to show. The node and the rail share one column beside the body, and the column stretches with it.
+- [x] **AC-AD6** The rail runs through the square's own centre line. It is centred in a gutter one node wide, rather than offset by half a node's padding, which left the one point line half a point to the right of centre.
+- [x] **AC-AD7** A record with a review stage running is not reported as awaiting a summary. One agent runs QA and verification when the settings give them no model of their own, so its status alone cannot tell one turn from another, and a spinner lit by a QA run on a record that never got a summary would never resolve. Verified by probe.
+- [x] **AC-AD8** An unreadable agent list leaves the last answer standing rather than reporting that every agent stopped. With nothing being watched the set clears instead, because a set left standing would be a claim about agents that are no longer anybody's. Verified by probe.
+- [ ] **AC-AD9** The working indicator appears on a record that is arriving, and is replaced by the summary itself without a press. Awaiting the app.
+- [ ] **AC-AD10** The metro line meets every stop, on the row strip and on the detail map, with a node collapsed and with the longest node expanded. Awaiting the app.
+
 ## Awaiting the app
 
 Every criterion below is built and typechecked. None can be ticked from here: each asserts
@@ -661,6 +695,8 @@ invocation command, so there is no route to them except the running app.
 | AC-K2, AC-AB8                  | The next review request to arrive, read before anything is pressed                                              |
 | AC-AC12                        | The next review request to arrive with Radar closed, watched for the dot, then opened                           |
 | AC-AC13                        | One record with a per-task model set for QA, beside one without                                                 |
+| AC-AD9                         | The next review request to arrive, watched from the moment the row appears until the summary lands              |
+| AC-AD10                        | A look at the detail map with Verification expanded, and at a row strip beside it                               |
 | AC-G2, AC-G6, AC-G22, AC-G24   | One walk through the wizard on a record with findings, including a `blocking` one, left and re-entered part way |
 | AC-G10, AC-G15, AC-G16, AC-G25 | One real submit, read against the pull request's own review list                                                |
 | AC-L1 wiring                   | One real arrival, one stage run and one dismiss, read against the week file                                     |

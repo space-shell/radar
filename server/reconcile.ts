@@ -1,5 +1,5 @@
 import type { IntakeRecord } from "../shared/inbox";
-import { liveAgentIds } from "./intake";
+import { agentStatuses } from "./intake";
 import { keyUrl, note } from "./ledger";
 import { log } from "./log";
 import { pullRequestState } from "./reap";
@@ -29,6 +29,30 @@ export async function settled(
 }
 
 /**
+ * Statuses from which more output is still to come. The same rule `inspectAgent`
+ * applies to one agent, applied here to the whole list in one call.
+ */
+const WORKING_STATUSES: ReadonlySet<string> = new Set([
+  "running",
+  "initializing",
+]);
+
+/**
+ * Agents with a turn in flight, as of the last reconcile.
+ *
+ * In memory because it is a fact about right now: a restart clearing it is the
+ * truth, not a loss. Refreshed on the tick rather than on demand, so the screen
+ * asking costs nothing and reads at most one tick behind. The two things it
+ * gates both settle on the same tick, so a stale answer cannot contradict what
+ * is on screen. AC-AD3.
+ */
+let working: ReadonlySet<string> = new Set();
+
+export function workingAgents(): ReadonlySet<string> {
+  return working;
+}
+
+/**
  * A green row must mean a live agent. An agent archived or deleted by hand leaves
  * the record claiming a session that no longer opens, so it moves to `orphaned`
  * and becomes retryable. R3.
@@ -45,10 +69,19 @@ export async function reconcileAgents(): Promise<void> {
   );
 
   const lost: IntakeRecord[] = [];
-  if (watched.length > 0) {
+  if (watched.length === 0) {
+    // Nothing is being watched, so nothing can be mid-turn. Clearing rather than
+    // leaving the last answer standing: a stale set would outlive its agents.
+    working = new Set();
+  } else {
     try {
-      const live = await liveAgentIds();
-      lost.push(...watched.filter((record) => !live.has(record.agentId!)));
+      const statuses = await agentStatuses();
+      lost.push(...watched.filter((record) => !statuses.has(record.agentId!)));
+      const live = new Set<string>();
+      for (const [id, status] of statuses) {
+        if (WORKING_STATUSES.has(status)) live.add(id);
+      }
+      working = live;
     } catch (error) {
       // Fail closed. An unreadable agent list is not evidence that every agent died.
       log(`cannot list agents: ${String(error)}`);

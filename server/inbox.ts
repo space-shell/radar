@@ -3,10 +3,50 @@ import {
   intakeRecordSchema,
   type IntakeRecord,
 } from "../shared/inbox";
+import { REVIEW_STAGES, reviewOf } from "../shared/review";
+import { workingAgents } from "./reconcile";
 import { loadConfig } from "./settings";
 import { loadState, updateState } from "./state";
 import { log } from "./log";
 import { summarising } from "./summary";
+
+/**
+ * Keys with a summary on its way, from either direction it can arrive.
+ *
+ * A press is the first: the call that started it returned in milliseconds and
+ * the turn behind it runs for minutes, so the daemon is the only thing that
+ * knows it is still going. AC-Q3.
+ *
+ * Intake is the second, and it is the ordinary one now that a record arrives
+ * with a summary written by the turn that read the diff. Nothing here started
+ * that turn and nothing waits on it, so the only evidence it is still running
+ * is the agent's own status. Without this the detail view shows an empty card
+ * for the several minutes intake takes, which reads as a summary that is not
+ * coming rather than one that has not arrived. AC-AD2.
+ *
+ * A record with a review stage running is left out. The same agent runs QA and
+ * verification when the settings give them no model of their own, so its status
+ * cannot tell one turn from another: a QA run on a record that never got a
+ * summary is not a summary arriving, and saying so would be a spinner that
+ * never resolves. AC-AD7.
+ */
+function awaitingSummary(records: IntakeRecord[]): string[] {
+  const live = workingAgents();
+  const keys = new Set(summarising());
+
+  for (const record of records) {
+    if (record.summary) continue;
+    if (!record.agentId || !live.has(record.agentId)) continue;
+    const review = reviewOf(record);
+    const busy = REVIEW_STAGES.some(
+      (stage) => review[stage].status === "running",
+    );
+    if (busy) continue;
+    keys.add(record.key);
+  }
+
+  return [...keys];
+}
 
 /**
  * The screen parses this payload against the same schema, so one malformed record
@@ -37,9 +77,7 @@ export async function readInboxState() {
     lastSearchAt: state.lastSearchAt,
     dryRun: config.dryRun,
     unreadable,
-    // The press that started a summary returned in milliseconds. Only the daemon
-    // knows the turn behind it is still going, so it says so here. AC-Q3.
-    summarising: summarising(),
+    summarising: awaitingSummary(records),
     records: records.reverse(),
   };
 }

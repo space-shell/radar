@@ -4,11 +4,13 @@ import { Pressable, Text, View } from "react-native";
 import type { IntakeRecord } from "../shared/inbox";
 import { ConfirmButton } from "./confirm";
 import { age } from "./format";
+import { BusyDots } from "./spinner";
 
 export interface SummaryCardProps {
   record: IntakeRecord;
   theme: PluginTheme;
   compact: boolean;
+  /** A summary is on its way: intake is still writing one, or a retry is running. */
   busy: boolean;
   onRun(): void;
 }
@@ -83,10 +85,9 @@ function styleSheet(theme: PluginTheme, compact: boolean) {
 }
 
 /**
- * What the agent made of the pull request, in James' own diction rules. It is
- * written by the intake agent on arrival and rewritten on a press, never on the
- * screen opening: an agent turn is a cost, and every other transition in this
- * plugin follows a press. AC-K1.
+ * What the agent made of the pull request, in James' own diction rules. Written
+ * by the intake agent in the turn that read the diff, so a record arrives with
+ * one and the card has something to render before anything is pressed. AC-K1.
  */
 export function SummaryCard({
   record,
@@ -105,10 +106,21 @@ export function SummaryCard({
    */
   const [open, setOpen] = useState(true);
 
+  /**
+   * The one way back when the automatic summary did not arrive, and the only
+   * state this card has a control in.
+   *
+   * Intake writes the summary now, so a Refresh beside a summary that is already
+   * there offered to pay for a second reading of a diff nothing had said was
+   * stale, and a Summarise beside a card still filling asked for the turn that
+   * was running. What is left is the case neither covers: the agent has stopped
+   * and nothing landed, which is the only moment a press is the difference
+   * between a summary and no summary. AC-AD1.
+   */
   const button = (
     <ConfirmButton
-      label={summary ? "Refresh" : "Summarise"}
-      confirmLabel={summary ? "Refresh?" : "Summarise?"}
+      label={record.summaryError ? "Retry" : "Summarise"}
+      confirmLabel={record.summaryError ? "Retry?" : "Summarise?"}
       busyLabel="Summarising"
       theme={theme}
       style={styles.action}
@@ -134,8 +146,24 @@ export function SummaryCard({
     return (
       <View style={styles.card}>
         <View style={styles.foot}>
-          <Text style={styles.absent}>No summary yet.</Text>
-          {button}
+          {busy ? (
+            <>
+              {/* Where the summary will be, rather than anywhere else on the
+                  screen. The card is what James is waiting on, so the card is
+                  what has to say it is coming. AC-AD2. */}
+              <BusyDots
+                theme={theme}
+                label="The agent is still reading the pull request"
+                size={3}
+              />
+              <Text style={styles.absent}>Reading the pull request</Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.absent}>No summary yet.</Text>
+              {button}
+            </>
+          )}
         </View>
         {failure}
       </View>
@@ -185,7 +213,6 @@ export function SummaryCard({
 
       <View style={styles.foot}>
         <Text style={styles.when}>summarised {age(summary.generatedAt)}</Text>
-        {button}
       </View>
     </View>
   );
