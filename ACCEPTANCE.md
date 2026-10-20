@@ -671,6 +671,39 @@ rather than a line that spans one.
 - [ ] **AC-AD9** The working indicator appears on a record that is arriving, and is replaced by the summary itself without a press. Awaiting the app.
 - [ ] **AC-AD10** The metro line meets every stop, on the row strip and on the detail map, with a node collapsed and with the longest node expanded. Awaiting the app.
 
+## AE. The daemon says it, rather than being asked
+
+The plugin host fires nine lifecycle events on the daemon while a plugin is
+enabled, and radar used a sixty second tick to go and ask the same questions.
+Three of the nine answer them directly: `agent.turn_ended` is exactly when a
+review stage can have finished and when an intake's summary file can have
+appeared, and `agent.archived` and `agent.closed` are exactly when a record can
+have lost the agent it claims.
+
+The research behind choosing these three and nothing else is in the plan. The
+short of it: Paseo's own hooks are the one free transport. A GitHub webhook is
+creatable and buys 59 seconds against a public receiver, a fifth always-on
+service and a shared secret. Linear is blocked, `isAdmin: false`. Slack Socket
+Mode trades working access for an approval queue. So GitHub stays on the
+conditional poll, which a tick with no news answers in one request and a 304.
+
+Nothing here is trusted on its own. The hooks are documented as live and best
+effort, with no replay, no persistence and no automatic retry, so a daemon that
+was not running when a turn ended is never told and nothing else would notice.
+The tick keeps both passes underneath them.
+
+- [x] **AC-AE1** Every handler asks whether the agent is radar's before doing anything. The daemon fires these for every agent on the machine and radar owns a handful, so an unfiltered handler would run a ledger sweep on each of 76 agents' turns. Ownership covers a record's own agent and any a task was given of its own. Verified by probe.
+- [x] **AC-AE2** An event arriving during a pass gets a pass of its own, and a burst of them during one pass gets one between them. Joining the run already going would drop the change, because that run has already read the half of the ledger the event concerns. Verified by probe.
+- [x] **AC-AE3** A turn ending takes its agent out of the working set in the same tick, rather than at the next agent list. The case that needs it is a turn that ended having written nothing: no summary arrives to replace the indicator, so the card would otherwise claim one was still being written for up to a minute after the agent stopped. Verified by probe.
+- [x] **AC-AE4** The agent list still runs every tick. It is one `paseo ls`, and the screen reads which agents are mid-turn out of what it refreshes, so a slow clock there would be a summary indicator a slow clock behind. The stage and summary pass moved to a ten minute floor, because what made it worth a minute was a thirty second `paseo inspect` per running stage, and that is now what the event reports for nothing.
+- [x] **AC-AE5** The floor runs on the first tick after a start. A restart is the one moment an event is certain to have been missed, and the stamp that paces the floor is in memory for the same reason the fact it records is. Verified by probe.
+- [x] **AC-AE6** Ownership is read from the ledger on each event rather than from a cache refreshed on the tick. The event that matters most is the first turn of an agent launched a moment ago, which a tick-paced cache would not yet know. Verified by probe.
+- [x] **AC-AE7** A handler starts its work and returns rather than awaiting it. A hook is abandoned at thirty seconds and a settle pass can spend that long inspecting one agent, so a handler that waited would report a timeout on the events with the most to do. Nothing waits on the result: it is a ledger write the screen refetches.
+- [x] **AC-AE8** `pollNotifications`, `sweep`, `reap` and the Linear poll are untouched. Nothing in the daemon knows when a review is requested on GitHub, so that half stays exactly as it was.
+- [x] **AC-AE9** Plugin cleanup removes all three registrations. Verified by probe.
+- [ ] **AC-AE10** A live turn ending puts its summary on the screen without the tick: `paseo plugin logs radar` shows `ended a turn, settling stages and summaries` and the detail view fills, with no `collected the summary` from a floor pass behind it. Awaiting the app.
+- [ ] **AC-AE11** A stage left running by a killed agent settles from the event rather than after a minute. Awaiting the app.
+
 ## Awaiting the app
 
 Every criterion below is built and typechecked. None can be ticked from here: each asserts
@@ -679,6 +712,8 @@ invocation command, so there is no route to them except the running app.
 
 | Criterion                      | What settles it                                                                                                 |
 | ------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| AC-AE10                        | One record taken in with the app open, watching the card fill before the next tick                              |
+| AC-AE11                        | One `paseo agent kill` on an agent with a stage running                                                         |
 | AC-A2, AC-A3, AC-A4            | One Retry press on an `orphaned` or `failed` record                                                             |
 | AC-A7, AC-A9                   | One Dismiss press, then Restore                                                                                 |
 | AC-B1, AC-B2                   | A look at the dismissed toggle with at least one row behind it                                                  |
@@ -711,7 +746,7 @@ invocation command, so there is no route to them except the running app.
 | AC-X1 to AC-X5                 | One press on a confirm, one on the clock, one on each tab, watched for anything beside them moving              |
 | AC-Y7                          | Opening the plugin on an Android device, which is the only place the Hermes failure showed                      |
 | AC-Z18                         | Opening Settings, Radar: the pickers populated, one brief edited and reverted, one save, one Discard            |
-| AC-AA1, AC-AA12                | A look at the wizard's last step, approve on and then off, with one control armed, in both themes              |
+| AC-AA1, AC-AA12                | A look at the wizard's last step, approve on and then off, with one control armed, in both themes               |
 
 ## Non-goals
 

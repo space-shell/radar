@@ -44,18 +44,16 @@ import {
 import { dismissRecord, retryRecord } from "./server/actions";
 import { markRecordSeen, readInboxState } from "./server/inbox";
 import { note, writeOpen } from "./server/ledger";
-import { reconcileStages, setStageStatus } from "./server/stages";
+import { setStageStatus } from "./server/stages";
 import { runStageFor, undoStageFor } from "./server/stage-actions";
 import { adoptFindings } from "./server/qa";
 import { reap } from "./server/reap";
 import { reconcileAgents } from "./server/reconcile";
+import { attachHooks, settleDue } from "./server/hooks";
 import { setupCommand } from "./server/setup";
 import { singleFlight } from "./server/single-flight";
 import { refreshStatuses } from "./server/status";
-import {
-  collectSummaries,
-  runSummary as runSummaryFor,
-} from "./server/summary";
+import { runSummary as runSummaryFor } from "./server/summary";
 import {
   checkAnchors,
   readFeedback,
@@ -110,7 +108,15 @@ async function intake(
   } else if (dryRun) {
     record.state = "dry-run";
     log(
-      `would launch: paseo ${launchArgs(request, checkout, briefs, setup, baseAgent(await loadConfig())).slice(0, -1).join(" ")}`,
+      `would launch: paseo ${launchArgs(
+        request,
+        checkout,
+        briefs,
+        setup,
+        baseAgent(await loadConfig()),
+      )
+        .slice(0, -1)
+        .join(" ")}`,
     );
   } else {
     try {
@@ -343,15 +349,15 @@ async function linearDue(seconds: number): Promise<void> {
 async function tick(): Promise<number> {
   const config = await loadConfig();
 
-  // Every tick, not only on a search: a stage stuck by a restart should not wait
-  // out the ten minute search interval. Costs nothing when no stage is running.
-  await reconcileStages();
+  // Every tick, because it is one `paseo ls` and because the screen reads which
+  // agents are mid turn out of what it refreshes. A slow clock here would be a
+  // summary indicator a slow clock behind. The hooks only sharpen it. AC-AE4.
   await reconcileAgents();
 
-  // The intake turns run in the background and nothing waits on them, so the
-  // summaries they write are met here rather than announced. One readFile per
-  // record still missing one, which is nothing on a ledger of this size.
-  await collectSummaries();
+  // Stages and summaries are the hooks' work now: a turn ending is exactly when
+  // either can have changed, and the daemon says so for free. This is the floor
+  // under them, for the events a stopped daemon never heard. AC-AE5.
+  await settleDue();
 
   const before = await loadState();
   const hint = await pollNotifications(before.githubLastModified);
@@ -424,6 +430,9 @@ export default function contribute(server: PluginServerContext) {
   server.handle(checkAnchors, ({ key }) => checkDraftAnchors(key));
   server.handle(submitFeedback, ({ key, event }) => submitReview(key, event));
 
+  // Registered before the first tick, so a turn that ends while it runs is heard.
+  const detachHooks = attachHooks(server);
+
   let timer: NodeJS.Timeout | undefined;
   let stopped = false;
 
@@ -448,6 +457,7 @@ export default function contribute(server: PluginServerContext) {
   return () => {
     stopped = true;
     if (timer) clearTimeout(timer);
+    detachHooks();
     log("stopped");
   };
 }

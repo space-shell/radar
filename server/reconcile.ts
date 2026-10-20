@@ -53,6 +53,26 @@ export function workingAgents(): ReadonlySet<string> {
 }
 
 /**
+ * Takes an agent out of the working set the moment its turn ends, rather than
+ * waiting for the next list.
+ *
+ * The daemon says so a tick before a list would, and the one place the set is
+ * read is a card that says a summary is coming. A turn that ended having written
+ * nothing is the case this covers: no summary arrives to replace the indicator,
+ * so without this the card would claim one was still being written for up to a
+ * whole tick after the agent had stopped. AC-AE3.
+ *
+ * Replaced rather than mutated, so a reader holding the set it was given reads a
+ * consistent answer rather than one changing underneath it.
+ */
+export function agentSettled(agentId: string): void {
+  if (!working.has(agentId)) return;
+  const next = new Set(working);
+  next.delete(agentId);
+  working = next;
+}
+
+/**
  * A green row must mean a live agent. An agent archived or deleted by hand leaves
  * the record claiming a session that no longer opens, so it moves to `orphaned`
  * and becomes retryable. R3.
