@@ -1,6 +1,10 @@
-import { intakeRecordSchema, type IntakeRecord } from "../shared/inbox";
+import {
+  activityAt,
+  intakeRecordSchema,
+  type IntakeRecord,
+} from "../shared/inbox";
 import { loadConfig } from "./settings";
-import { loadState } from "./state";
+import { loadState, updateState } from "./state";
 import { log } from "./log";
 import { summarising } from "./summary";
 
@@ -38,4 +42,30 @@ export async function readInboxState() {
     summarising: summarising(),
     records: records.reverse(),
   };
+}
+
+export interface SeenResult {
+  ok: boolean;
+  error?: string;
+}
+
+/**
+ * Stamps the record as looked at. Now, or the record's own latest activity when
+ * that reads as later.
+ *
+ * The second half is not decoration. `summary.generatedAt` is written by an
+ * agent and a clock a minute fast would put it beyond every stamp this could
+ * write, so the screen would ask to be marked seen, read a stamp that still
+ * lost, and ask again: a write loop paced by the refetch. Stamping to the
+ * activity itself ends it in one write. AC-AC7.
+ */
+export async function markRecordSeen(key: string): Promise<SeenResult> {
+  return updateState<SeenResult>((state) => {
+    const record = state.intake.find((candidate) => candidate.key === key);
+    if (!record) return { ok: false, error: "no such record" };
+    record.seenAt = new Date(
+      Math.max(Date.now(), activityAt(record)),
+    ).toISOString();
+    return { ok: true };
+  });
 }

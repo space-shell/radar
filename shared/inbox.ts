@@ -1,7 +1,7 @@
 import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
 import { feedbackSchema } from "./feedback";
-import { REVIEW_STAGES, reviewSchema } from "./review";
+import { REVIEW_STAGES, reviewOf, reviewSchema } from "./review";
 import { summarySchema } from "./summary";
 
 /**
@@ -75,7 +75,55 @@ export const intakeRecordSchema = z.object({
   feedback: feedbackSchema.optional(),
   /** What GitHub says about the pull request. Absent until the first sweep. AC-M1. */
   pr: pullRequestStatusSchema.optional(),
+  /**
+   * When James last had the record open. Absent until he has opened it once, which
+   * is why a record arrives already marked. Stored on the record rather than kept
+   * in the app, so the mark survives a restart and reads the same on the phone and
+   * the desktop. AC-AC4.
+   */
+  seenAt: z.string().optional(),
 });
+
+/** Epoch milliseconds for the latest of some timestamps, 0 when none parses. */
+function latest(times: ReadonlyArray<string | undefined>): number {
+  let best = 0;
+  for (const time of times) {
+    if (!time) continue;
+    // summary.generatedAt is written by an agent, so its notation is not this
+    // code's to assume. An unparseable one is ignored rather than guessed at.
+    const when = Date.parse(time);
+    if (Number.isFinite(when) && when > best) best = when;
+  }
+  return best;
+}
+
+/**
+ * The last moment the record gained something worth a look: it arriving, a stage
+ * settling, and the summary landing.
+ *
+ * Three things are deliberately not here. `pr.checkedAt` moves on every sweep and
+ * would leave every record permanently unread. A skip is James' own press, so it
+ * cannot be news to him. A stage merely starting is the same: he started it.
+ * AC-AC5.
+ */
+export function activityAt(record: IntakeRecord): number {
+  const review = reviewOf(record);
+  const settled = REVIEW_STAGES.map((stage) => {
+    const { status, endedAt } = review[stage];
+    return status === "done" || status === "failed" ? endedAt : undefined;
+  });
+  return latest([record.firstSeen, record.summary?.generatedAt, ...settled]);
+}
+
+/**
+ * Whether the record has moved since James last opened it. Dismissed and archived
+ * records are excluded: he has already said he is done with them, and a dot that
+ * cannot be cleared by looking is a dot that gets ignored. AC-AC6.
+ */
+export function unseen(record: IntakeRecord): boolean {
+  if (record.dismissedAt || record.state === "archived") return false;
+  return activityAt(record) > latest([record.seenAt]);
+}
 
 /** Derived rather than stored: GitHub pull request URLs are a fixed shape. */
 export function pullRequestUrl(record: {
@@ -151,6 +199,18 @@ export const setDismissed = defineRpc({
     /** The row moved, but taking the eyes reaction back did not. AC-H2. */
     warning: z.string().optional(),
   }),
+});
+
+/**
+ * Marks a record as looked at, which is what clears its dot. Called by the detail
+ * view rather than pressed: opening the record is the act of seeing it, and a
+ * control that asked James to confirm he had read something would be one more
+ * thing to remember. AC-AC7.
+ */
+export const markSeen = defineRpc({
+  name: "radar.inbox.seen",
+  input: z.object({ key: z.string() }),
+  output: z.object({ ok: z.boolean(), error: z.string().optional() }),
 });
 
 export const setStage = defineRpc({

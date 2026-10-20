@@ -115,12 +115,14 @@ function styleSheet(theme: PluginTheme, compact: boolean) {
       borderLeftWidth: 2,
       borderLeftColor: colors.statusWarning,
     },
+    // Outside a card, so no padding of its own: the section's gap already sets
+    // it off from the Approve switch above, and a bordered panel around two
+    // buttons framed them as one more setting to read. AC-AC3.
     actions: {
       flexDirection: "row" as const,
       alignItems: "center" as const,
       flexWrap: "wrap" as const,
       gap: 10,
-      padding: 12,
     },
     // Armed, not idle. The accent is the colour of every other link on the
     // screen, so an armed control read as one more thing to tap. Warning is
@@ -597,12 +599,26 @@ export function Wizard({
           />
         </SettingsCard>
 
-        <SettingsCard>
-          <View style={styles.actions}>
-            {draft.approve ? (
+        <View style={styles.actions}>
+          {draft.approve ? (
+            <ConfirmButton
+              label="Submit approval"
+              confirmLabel="Submit approval?"
+              busyLabel="Submitting"
+              theme={theme}
+              style={styles.onFill}
+              confirmStyle={styles.onFill}
+              chrome={styles.submit}
+              confirmChrome={styles.submitArmed}
+              busy={busy}
+              disabled={busy}
+              onConfirm={() => submit.mutate("APPROVE")}
+            />
+          ) : (
+            <>
               <ConfirmButton
-                label="Submit approval"
-                confirmLabel="Submit approval?"
+                label="Submit comment"
+                confirmLabel="Submit comment?"
                 busyLabel="Submitting"
                 theme={theme}
                 style={styles.onFill}
@@ -611,41 +627,25 @@ export function Wizard({
                 confirmChrome={styles.submitArmed}
                 busy={busy}
                 disabled={busy}
-                onConfirm={() => submit.mutate("APPROVE")}
+                onConfirm={() => submit.mutate("COMMENT")}
               />
-            ) : (
-              <>
-                <ConfirmButton
-                  label="Submit comment"
-                  confirmLabel="Submit comment?"
-                  busyLabel="Submitting"
-                  theme={theme}
-                  style={styles.onFill}
-                  confirmStyle={styles.onFill}
-                  chrome={styles.submit}
-                  confirmChrome={styles.submitArmed}
-                  busy={busy}
-                  disabled={busy}
-                  onConfirm={() => submit.mutate("COMMENT")}
-                />
-                {/* Its own control, never the fallback for an unchecked box. AC-G24. */}
-                <ConfirmButton
-                  label="Request changes"
-                  confirmLabel="Request changes?"
-                  busyLabel="Submitting"
-                  theme={theme}
-                  style={styles.secondaryLabel}
-                  confirmStyle={styles.confirm}
-                  chrome={styles.secondary}
-                  confirmChrome={styles.secondaryArmed}
-                  busy={busy}
-                  disabled={busy}
-                  onConfirm={() => submit.mutate("REQUEST_CHANGES")}
-                />
-              </>
-            )}
-          </View>
-        </SettingsCard>
+              {/* Its own control, never the fallback for an unchecked box. AC-G24. */}
+              <ConfirmButton
+                label="Request changes"
+                confirmLabel="Request changes?"
+                busyLabel="Submitting"
+                theme={theme}
+                style={styles.secondaryLabel}
+                confirmStyle={styles.confirm}
+                chrome={styles.secondary}
+                confirmChrome={styles.secondaryArmed}
+                busy={busy}
+                disabled={busy}
+                onConfirm={() => submit.mutate("REQUEST_CHANGES")}
+              />
+            </>
+          )}
+        </View>
       </SettingsSection>
     );
   };

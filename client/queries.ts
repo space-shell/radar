@@ -16,6 +16,7 @@ import {
   type ReviewEvent,
 } from "../shared/feedback";
 import {
+  markSeen,
   readInbox,
   retryIntake,
   runStageAction,
@@ -73,6 +74,22 @@ export function useInbox() {
     ...query,
     refresh: () => queryClient.invalidateQueries({ queryKey: INBOX_QUERY }),
   };
+}
+
+/**
+ * Stamps the open record as looked at, which is what clears its dot.
+ *
+ * Silent in both directions. There is no press behind it, so a success toast
+ * would announce something James did not do, and a failure costs him a dot that
+ * stays lit on a record he has read: visible, harmless, and corrected by the
+ * next time he opens it. AC-AC7.
+ */
+export function useMarkSeen(refresh: () => void) {
+  const mark = useRpc(markSeen);
+  return useMutation({
+    mutationFn: (key: string) => mark({ key }),
+    onSuccess: refresh,
+  });
 }
 
 /**

@@ -30,6 +30,7 @@ import { readShippedBrief } from "./server/briefs";
 import { attachSettings, readLegacyFile } from "./server/settings";
 import { configPath } from "./server/state";
 import {
+  markSeen,
   pullRequestUrl,
   readInbox,
   retryIntake,
@@ -41,7 +42,7 @@ import {
   undoStageAction,
 } from "./shared/inbox";
 import { dismissRecord, retryRecord } from "./server/actions";
-import { readInboxState } from "./server/inbox";
+import { markRecordSeen, readInboxState } from "./server/inbox";
 import { note, writeOpen } from "./server/ledger";
 import { reconcileStages, setStageStatus } from "./server/stages";
 import { runStageFor, undoStageFor } from "./server/stage-actions";
@@ -386,6 +387,7 @@ export default function contribute(server: PluginServerContext) {
   attachSettings(server.registerSettings(radarSettings));
 
   server.handle(readInbox, readInboxState);
+  server.handle(markSeen, ({ key }) => markRecordSeen(key));
   server.handle(readProviders, (_input, { paseo }) =>
     readProviderOptions(paseo),
   );

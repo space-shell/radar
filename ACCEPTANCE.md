@@ -608,6 +608,35 @@ second reading that group U objected to, now charged only when it is asked for.
 - [x] **AC-AB7** A press in flight holds its key against the collector, so the two cannot both write a summary for one record. Verified by probe with a turn held open.
 - [ ] **AC-AB8** The next review request to arrive shows its summary on the detail view without anything being pressed. Awaiting the app, and a new review request.
 
+## AC. A dot, a link that leads somewhere new, and one less panel
+
+Three things James named after living with the screen.
+
+The dot answers a question the plugin could not: has anything happened. Radar
+polls every 60 seconds whether or not it is on screen, and until now the only
+way to find out what it had found was to open it and look. The two moments he
+named, a review request arriving and a review step finishing, are one state:
+the record has moved since he last had it open.
+
+The per-step agent link was five routes to one transcript. Only QA and
+verification can be given a model of their own, and only then is there a second
+agent to reach; every other node ran inside intake's agent, which the heading
+already opens.
+
+- [x] **AC-AC1** The per-step control appears only where it leads somewhere new: a stage spawned with an agent of its own. Everything else drops it, because the pull request title at the top of the detail view opens that same agent.
+- [x] **AC-AC2** It says which agent. "Open QA agent" and "Open verification agent", not "Open agent": the point of the control is that this is not the one the heading opens.
+- [x] **AC-AC3** The submit controls stand on the section, not inside a card. The bordered panel framed two buttons as one more setting to read, and the card's own inset went with it.
+- [x] **AC-AC4** `seenAt` is stored on the record, not held in the app, so the mark survives a restart and reads the same on the phone and the desktop.
+- [x] **AC-AC5** Activity is the record arriving, a stage settling as `done` or `failed`, and the summary landing. A sweep is not activity: `pr.checkedAt` moves every 60 seconds and would leave every record permanently lit. A skip and a stage merely starting are not either: both are James' own press. Verified by probe, including that an unparseable `generatedAt` from an agent is ignored rather than guessed at.
+- [x] **AC-AC6** The dot is lit for a record that has moved since it was last opened. Dismissed and archived records never light: he has said he is done with them, and a dot that looking cannot clear is a dot that gets ignored. Verified by probe across eight cases.
+- [x] **AC-AC7** Opening the record marks it seen. No control asks James to confirm he has read something. The stamp is now, or the record's own latest activity when that reads as later: a summary written by an agent with a clock a minute fast would otherwise beat every stamp, and the screen would ask to be marked seen on every refetch. Verified by probe, with the fast clock as a case.
+- [x] **AC-AC8** A stage that settles while the record is open re-marks it rather than lighting a dot on the screen James is already reading.
+- [x] **AC-AC9** The sidebar row runs the inbox read itself. A dot that only updated while the Radar screen was open would never once fire when it mattered. The query key is the screen's, so the row and the screen share one cache and one 30 second interval rather than polling twice.
+- [x] **AC-AC10** The dot takes the muted accent, the same `highlight()` the rest of the plugin uses. An untouched accent would be the one loud green on a screen built to be quiet.
+- [x] **AC-AC11** The row carries the same mark as the sidebar. Without it the dot says something moved and leaves James to open every record to find out which.
+- [ ] **AC-AC12** The dot appears on the sidebar within 30 seconds of a review request arriving with Radar closed, and clears on opening the record. Awaiting the app.
+- [ ] **AC-AC13** The per-step control is absent on a record whose QA inherited intake's agent, and present and correctly named on one whose settings gave QA a model of its own. Awaiting the app.
+
 ## Awaiting the app
 
 Every criterion below is built and typechecked. None can be ticked from here: each asserts
@@ -630,6 +659,8 @@ invocation command, so there is no route to them except the running app.
 | AC-J9                          | The detail at the compact breakpoint                                                                            |
 | AC-K1, AC-K4, AC-K5            | A look at the detail view, with and without a summary, then one Summarise press                                 |
 | AC-K2, AC-AB8                  | The next review request to arrive, read before anything is pressed                                              |
+| AC-AC12                        | The next review request to arrive with Radar closed, watched for the dot, then opened                           |
+| AC-AC13                        | One record with a per-task model set for QA, beside one without                                                 |
 | AC-G2, AC-G6, AC-G22, AC-G24   | One walk through the wizard on a record with findings, including a `blocking` one, left and re-entered part way |
 | AC-G10, AC-G15, AC-G16, AC-G25 | One real submit, read against the pull request's own review list                                                |
 | AC-L1 wiring                   | One real arrival, one stage run and one dismiss, read against the week file                                     |

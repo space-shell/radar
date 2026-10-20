@@ -5,7 +5,7 @@ import { ExternalLink } from "@getpaseo/plugin/client/ui";
 import { useMachine } from "./vendor/xstate-react.mjs";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { pullRequestUrl, type IntakeRecord } from "../shared/inbox";
+import { pullRequestUrl, unseen, type IntakeRecord } from "../shared/inbox";
 import { viewMachine } from "../shared/machines/view";
 import { ConfirmButton } from "./confirm";
 import { Detail } from "./detail";
@@ -90,6 +90,13 @@ function styleSheet(theme: PluginTheme, compact: boolean) {
       gap: 10,
     },
     title: { color: colors.foreground, fontSize: compact ? 15 : 16 },
+    /**
+     * The same mark the sidebar carries, on the row that earned it. Without it
+     * the dot says something moved and leaves James to open every record to find
+     * out which. Inline and leading, so it cannot wrap away from its title.
+     * AC-AC11.
+     */
+    titleNew: { color: highlight(colors.accent), fontSize: 10 },
     /** The fault marker rides at the end of the title, inline, so it cannot wrap away. */
     titleFault: { color: colors.statusDanger, fontSize: compact ? 15 : 16 },
     meta: { color: colors.foregroundMuted, fontSize: 12 },
@@ -249,6 +256,14 @@ export function Inbox({
         >
           <View style={{ gap: 4 }}>
             <Text style={styles.title}>
+              {unseen(record) ? (
+                <Text
+                  accessibilityLabel="New since this record was last opened"
+                  style={styles.titleNew}
+                >
+                  {"\u25CF "}
+                </Text>
+              ) : null}
               #{record.number} {record.title}
               {record.lastError ? (
                 // The reason itself lives on the detail view. A row carrying a

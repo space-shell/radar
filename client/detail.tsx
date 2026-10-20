@@ -2,9 +2,9 @@ import type { PluginTheme } from "@getpaseo/plugin";
 import { highlight } from "../shared/colour";
 import type { PluginScreenProps } from "@getpaseo/plugin/client";
 import { ExternalLink } from "@getpaseo/plugin/client/ui";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { pullRequestUrl, type IntakeRecord } from "../shared/inbox";
+import { activityAt, pullRequestUrl, type IntakeRecord } from "../shared/inbox";
 import {
   MAP_NODES,
   REVIEW_STAGES,
@@ -26,6 +26,7 @@ import {
   useDismiss,
   useDismissingKeys,
   useInbox,
+  useMarkSeen,
   useStage,
   useStageAction,
   useStagingKeys,
@@ -77,15 +78,26 @@ function isReviewStage(node: MapNode): node is ReviewStage {
   return (REVIEW_STAGES as readonly string[]).includes(node);
 }
 
+/** The two stages the settings can give a model of their own, so an agent of their own. */
+function spawnable(node: MapNode): node is "qa" | "verification" {
+  return node === "qa" || node === "verification";
+}
+
+/** What the per-stage control says, once there is a second transcript to name. */
+const AGENT_LABELS: Record<"qa" | "verification", string> = {
+  qa: "Open QA agent",
+  verification: "Open verification agent",
+};
+
 /**
- * Which agent to open for a node. Only QA and verification cost a turn, and
- * either may have been given a model of its own; everything else is intake's.
+ * Which agent to open for a node, and only when it is not the record's own. A
+ * stage with no model of its own ran inside intake's agent, which the heading
+ * above already opens: repeating that link on every node offered five routes to
+ * one transcript and said nothing about which. Undefined removes the control.
+ * AC-AC1.
  */
 function stageAgent(record: IntakeRecord, node: MapNode): string | undefined {
-  if (node === "qa" || node === "verification") {
-    return record.taskAgents?.[node] ?? record.agentId;
-  }
-  return record.agentId;
+  return spawnable(node) ? record.taskAgents?.[node] : undefined;
 }
 
 function stageOf(record: IntakeRecord, node: MapNode): Stage | undefined {
@@ -213,6 +225,7 @@ export function Detail({
   const actingKeys = useActingKeys();
   const summaryMutation = useSummarise(refresh);
   const summarisingKeys = useSummarisingKeys();
+  const seenMutation = useMarkSeen(refresh);
 
   const styles = useMemo(
     () => styleSheet(theme, layout.compact),
@@ -220,6 +233,21 @@ export function Detail({
   );
 
   const record = data?.records.find((candidate) => candidate.key === recordKey);
+
+  /**
+   * Looking at the record is what marks it seen, and it is marked again each time
+   * something lands while it is open: a QA stage that settles under his eyes must
+   * not light a dot on the screen he is already reading. The stamp the server
+   * writes makes the condition false, so this settles after one write. AC-AC8.
+   */
+  const activity = record ? activityAt(record) : 0;
+  const seenAt = record?.seenAt;
+  const mark = seenMutation.mutate;
+  useEffect(() => {
+    if (!record) return;
+    if (seenAt && Date.parse(seenAt) >= activity) return;
+    mark(record.key);
+  }, [record, seenAt, activity, mark]);
 
   if (!record) {
     return (
@@ -395,13 +423,10 @@ export function Detail({
             // "Cannot run yet" is exactly a pending node the pipeline has not reached.
             const blocked = actions.length === 0 && status === "pending";
             const when = timing(node, stage);
-            // The agent that actually ran this stage, which is intake's unless
-            // the settings gave the stage a model of its own. Opening the wrong
-            // one shows a transcript that never mentions this stage.
+            // Set only where the stage was spawned with an agent of its own, so
+            // the control appears exactly where it leads somewhere new.
             const nodeAgent = stageAgent(record, node);
-            const agentLink = Boolean(
-              openAgent && nodeAgent && isReviewStage(node),
-            );
+            const agentLink = Boolean(openAgent && nodeAgent);
             /**
              * A node opens when it has something under it. A running stage offers
              * no action, because nothing can interrupt a turn, but it is exactly
@@ -491,13 +516,13 @@ export function Detail({
                           </Text>
                         </Pressable>
                       ) : null}
-                      {agentLink && openAgent && nodeAgent ? (
+                      {openAgent && nodeAgent && spawnable(node) ? (
                         <Pressable
                           accessibilityRole="button"
-                          accessibilityLabel={`Open the agent running ${STAGE_LABELS[node]}`}
+                          accessibilityLabel={`${AGENT_LABELS[node]} for ${record.key}`}
                           onPress={() => openAgent({ agentId: nodeAgent })}
                         >
-                          <Text style={styles.link}>Open agent</Text>
+                          <Text style={styles.link}>{AGENT_LABELS[node]}</Text>
                         </Pressable>
                       ) : null}
                     </View>
