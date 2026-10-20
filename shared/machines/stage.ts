@@ -3,6 +3,7 @@ import {
   RUNNABLE_STAGES,
   SKIPPABLE_STAGES,
   UNDOABLE_STAGES,
+  isQueued,
   laterStagesStarted,
   nodeStatus,
   type Reviewable,
@@ -15,10 +16,16 @@ export interface StageContext {
   isCurrent: boolean;
   /** Anything after this stage has left pending, which withdraws Undo. AC-D6. */
   laterMoved: boolean;
+  /** Claimed but not sent: the press is waiting for a busy agent. AC-AF23. */
+  queued: boolean;
 }
 
 export type StageEvent =
-  { type: "RUN" } | { type: "SKIP" } | { type: "REOPEN" } | { type: "UNDO" };
+  | { type: "RUN" }
+  | { type: "SKIP" }
+  | { type: "REOPEN" }
+  | { type: "UNDO" }
+  | { type: "CANCEL" };
 
 /**
  * The order controls are offered in, which is also the order they were built in
@@ -26,6 +33,7 @@ export type StageEvent =
  * reproduces every row of the table below, including the order within a row.
  */
 export const STAGE_EVENTS: readonly StageEvent["type"][] = [
+  "CANCEL",
   "RUN",
   "UNDO",
   "REOPEN",
@@ -41,6 +49,7 @@ export const STAGE_EVENTS: readonly StageEvent["type"][] = [
  *
  * | status  | current | offered                |
  * | ------- | ------- | ---------------------- |
+ * | queued  | any     | Cancel                 |
  * | running | any     | nothing                |
  * | done    | any     | Undo, else Reopen      |
  * | skipped | any     | Run, Reopen            |
@@ -76,6 +85,16 @@ export const stageMachine = setup({
     notUndoable: ({ context }) =>
       !UNDOABLE_STAGES.includes(context.stage) || context.laterMoved,
     reached: ({ context }) => context.isCurrent,
+    /**
+     * The press has not been sent yet, so it can still be taken back.
+     *
+     * Deliberately not also guarded by `reached`. Undoing acknowledge while QA is
+     * queued makes acknowledge the current node again, and a currency guard would
+     * leave that queued press uncancellable while it still held a lane. The
+     * converse, a queued QA withdrawing acknowledge's Undo, is `laterMoved` doing
+     * what it is for. AC-AF24.
+     */
+    cancellable: ({ context }) => context.queued,
   },
 }).createMachine({
   id: "stage",
@@ -91,8 +110,19 @@ export const stageMachine = setup({
         SKIP: { target: "skipped", guard: and(["skippable", "reached"]) },
       },
     },
-    /** A turn is in flight. Nothing on this screen can interrupt it. */
-    running: {},
+    /**
+     * A turn is in flight, or a press is waiting for the agent to be free.
+     *
+     * The two are one state here because they are one stored status: queued is
+     * `running` plus a `queuedAt`, which keeps every rule that reads `running`
+     * correct without a sixth member. The only thing that parts them is Cancel,
+     * which is a promise not to send a turn rather than a way to recall one.
+     */
+    running: {
+      on: {
+        CANCEL: { target: "pending", guard: "cancellable" },
+      },
+    },
     done: {
       on: {
         UNDO: { target: "pending", guard: "undoable" },
@@ -131,6 +161,7 @@ export function stageEvents(
     stage,
     isCurrent,
     laterMoved: laterStagesStarted(record, stage),
+    queued: isQueued(record, stage),
   };
   const snapshot = stageMachine.resolveState({
     value: nodeStatus(record, stage),

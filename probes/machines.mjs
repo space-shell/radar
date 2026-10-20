@@ -7,6 +7,7 @@ import {
 import { viewMachine } from "../shared/machines/view.ts";
 import { previewStepOf, wizardMachine } from "../shared/machines/wizard.ts";
 import { stageEvents } from "../shared/machines/stage.ts";
+import { nodeAppearance } from "../shared/appearance.ts";
 import {
   currentNode,
   REVIEW_STAGES,
@@ -748,6 +749,118 @@ function recordWith(stage, status, laterMoved) {
     "S5 feedback is not runnable",
     stageEvents(recordWith("feedback", "pending", false), "feedback", true),
     ["SKIP"],
+  );
+}
+
+// AF23. Queued is a sub-state of running, not a sixth status, and Cancel is the
+// only thing that parts them. The press has not been sent, so it can still be
+// taken back; once it has, there is nothing to take back and the stage offers
+// nothing, which is what S2 has always said.
+{
+  const queued = (stage, extra = {}) => {
+    const review = {};
+    for (const name of REVIEW_STAGES) review[name] = { status: "pending" };
+    review.acknowledge = { status: "done" };
+    review[stage] = { status: "running", queuedAt: "2026-10-20T08:00:00Z" };
+    return { review: { ...review, ...extra } };
+  };
+
+  check(
+    "AF23 a queued stage offers Cancel and nothing else",
+    stageEvents(queued("qa"), "qa", true),
+    ["CANCEL"],
+  );
+  check(
+    "AF23 a started running stage still offers nothing",
+    stageEvents(
+      { review: { qa: { status: "running", startedAt: "2026-10-20T08:00:00Z" } } },
+      "qa",
+      true,
+    ),
+    [],
+  );
+  check(
+    "AF23 a running stage with neither timestamp is not queued either",
+    stageEvents({ review: { qa: { status: "running" } } }, "qa", true),
+    [],
+  );
+
+  // AF24. Cancel carries no currency guard, on purpose. Undoing acknowledge
+  // while QA is queued makes acknowledge current again, and a currency guard
+  // would leave that press holding a lane with no way to let go of it.
+  check(
+    "AF24 Cancel is offered on a queued stage that is not current",
+    stageEvents(
+      {
+        review: {
+          acknowledge: { status: "pending" },
+          qa: { status: "running", queuedAt: "2026-10-20T08:00:00Z" },
+          verification: { status: "pending" },
+          feedback: { status: "pending" },
+        },
+      },
+      "qa",
+      false,
+    ),
+    ["CANCEL"],
+  );
+  // The converse, which is `laterMoved` doing what it is for: a queued QA is a
+  // stage that has moved, so acknowledge cannot be undone out from under it.
+  check(
+    "AF24 and a queued later stage withdraws Undo from the one before it",
+    stageEvents(queued("qa"), "acknowledge", false),
+    ["REOPEN"],
+  );
+}
+
+// AF25. The screen has one value more than the store. Queued has to read apart
+// from running at a glance, in a strip whose nodes are nine points across, and
+// it must not lean on colour to do it. AC-C3.
+{
+  const theme = {
+    colors: {
+      accent: "#3b82f6",
+      accentForeground: "#ffffff",
+      surface2: "#1f2937",
+      statusSuccess: "#22c55e",
+      statusDanger: "#ef4444",
+      foregroundMuted: "#9ca3af",
+      border: "#374151",
+    },
+  };
+  const look = (status) => nodeAppearance(status, theme);
+  const statuses = ["pending", "queued", "running", "done", "skipped", "failed"];
+
+  check(
+    "AF25 no two statuses share a glyph",
+    new Set(statuses.map((status) => look(status).glyph)).size,
+    statuses.length,
+  );
+  const queued = look("queued");
+  const running = look("running");
+  check(
+    "AF25 queued parts from running in glyph, fill and border, not in colour alone",
+    [
+      queued.glyph !== running.glyph,
+      queued.background !== running.background,
+      queued.borderStyle !== running.borderStyle,
+    ],
+    [true, true, true],
+  );
+  check(
+    "AF25 and from pending and skipped, the other two it could be mistaken for",
+    [
+      queued.glyph !== look("pending").glyph,
+      queued.borderStyle !== look("pending").borderStyle,
+      queued.glyph !== look("skipped").glyph,
+      queued.glyphColor !== look("skipped").glyphColor,
+    ],
+    [true, true, true, true],
+  );
+  check(
+    "AF25 the accent is carried, so it reads as work rather than absence",
+    [queued.glyphColor, queued.borderColor],
+    [running.glyphColor, running.borderColor],
   );
 }
 

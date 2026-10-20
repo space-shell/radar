@@ -58,6 +58,17 @@ export const STAGE_ACTIONS: Record<ReviewStage, string> = {
 
 export const stageSchema = z.object({
   status: stageStatusSchema,
+  /**
+   * When the press landed, for a stage waiting on a busy agent.
+   *
+   * A sub-state of `running` rather than a sixth status, because a queued stage is
+   * claimed: it holds the claim that stops a second press, and every rule that
+   * tests `status === "running"` already means the right thing for it. A new enum
+   * member would also blank the record for any reader on an older copy of this
+   * schema, since zod rejects an unknown member where it merely strips an unknown
+   * key. Cleared at promotion, when `startedAt` is written. AC-AF11.
+   */
+  queuedAt: z.string().optional(),
   startedAt: z.string().optional(),
   endedAt: z.string().optional(),
   error: z.string().optional(),
@@ -106,10 +117,39 @@ export interface Reviewable {
   review?: Partial<Review>;
 }
 
+/**
+ * Whether the press has landed but the turn has not been sent.
+ *
+ * `status` stays `running` throughout, so this is the one place that distinguishes
+ * the two. Dismiss has no stored stage and so can never be queued.
+ */
+export function isQueued(record: Reviewable, node: MapNode): boolean {
+  if (node === "dismiss") return false;
+  const stage = reviewOf(record)[node];
+  return stage.status === "running" && stage.queuedAt != null;
+}
+
 /** Dismiss has no stored stage: it reads straight off dismissedAt, so there is one truth. */
 export function nodeStatus(record: Reviewable, node: MapNode): StageStatus {
   if (node === "dismiss") return record.dismissedAt ? "done" : "pending";
   return reviewOf(record)[node].status;
+}
+
+/**
+ * What the screen shows, which is one value wider than what is stored.
+ *
+ * `nodeStatus` stays five valued because the stage machine resolves at it, and a
+ * sixth state there would need transitions duplicating `running`'s. The split
+ * happens at the edge instead, where the only thing it changes is a glyph, a
+ * border and a word.
+ */
+export type DisplayStatus = StageStatus | "queued";
+
+export function displayStatus(
+  record: Reviewable,
+  node: MapNode,
+): DisplayStatus {
+  return isQueued(record, node) ? "queued" : nodeStatus(record, node);
 }
 
 /**

@@ -8,7 +8,7 @@ import { briefPath } from "./briefs";
 import { setupCommand, setupLines } from "./setup";
 import { loadState, updateState } from "./state";
 import { runStage, type StageResult } from "./stages";
-import { askAgent, type Paseo } from "./turn";
+import { askAgent, gateFor, type Paseo } from "./turn";
 
 /** The wording runQa settles with, so an adopted file reads the same as a waited one. */
 function countNote(count: number): string {
@@ -67,7 +67,7 @@ export function runQa(key: string, paseo: Paseo): Promise<StageResult> {
 
       return countNote(file.findings.length);
     },
-    { background: true },
+    { background: true, gate: (record) => gateFor(paseo, record, "qa") },
   );
 }
 

@@ -11,12 +11,12 @@ import {
   STAGE_ACTIONS,
   STAGE_LABELS,
   currentNode,
-  nodeStatus,
+  displayStatus,
   reviewOf,
+  type DisplayStatus,
   type MapNode,
   type ReviewStage,
   type Stage,
-  type StageStatus,
 } from "../shared/review";
 import { stageEvents, type StageEvent } from "../shared/machines/stage";
 import { ConfirmButton } from "./confirm";
@@ -107,7 +107,7 @@ function stageOf(record: IntakeRecord, node: MapNode): Stage | undefined {
  * The status word, which carries what the glyph and the border carry so neither
  * shape nor colour is ever the only signal. AC-J3, AC-J4.
  */
-function statusWord(status: StageStatus, current: boolean): string {
+function statusWord(status: DisplayStatus, current: boolean): string {
   if (status !== "pending") return status;
   return current ? "ready" : "waiting";
 }
@@ -369,6 +369,17 @@ export function Detail({
         busyKey: `${record.key}:${node}:skipped`,
         run: moveStage(node, "skipped"),
       },
+      // Cancel is the same transition as Reopen, "put this stage back to
+      // pending", so it shares the call and the busy key. The two are never
+      // offered together: Reopen belongs to a settled stage and Cancel to one
+      // whose turn has not been sent. AC-AF15.
+      CANCEL: {
+        label: "Cancel",
+        confirmLabel: "Cancel?",
+        busyLabel: "Cancelling",
+        busyKey: `${record.key}:${node}:pending`,
+        run: moveStage(node, "pending"),
+      },
     };
 
     return stageEvents(record, node, isCurrent).map((type) => controls[type]);
@@ -379,6 +390,9 @@ export function Detail({
       return record.dismissedAt ? `dismissed ${age(record.dismissedAt)}` : null;
     }
     const parts: string[] = [];
+    // Exclusive with `started`: promotion replaces one with the other, so this
+    // reads how long the press has been waiting, not how long ago it was made.
+    if (stage?.queuedAt) parts.push(`queued ${age(stage.queuedAt)}`);
     if (stage?.startedAt) parts.push(`started ${age(stage.startedAt)}`);
     if (stage?.endedAt) parts.push(`ended ${age(stage.endedAt)}`);
     return parts.length > 0 ? parts.join(", ") : null;
@@ -434,7 +448,7 @@ export function Detail({
 
         <View style={styles.map}>
           {MAP_NODES.map((node, index) => {
-            const status = nodeStatus(record, node);
+            const status = displayStatus(record, node);
             const isCurrent = node === current;
             const actions = actionsFor(node, isCurrent);
             const stage = stageOf(record, node);

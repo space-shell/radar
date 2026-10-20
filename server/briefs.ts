@@ -1,5 +1,6 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { writeAtomic } from "./atomic";
 import type { Task } from "../shared/settings";
 import { pluginDirectory } from "./plugin-dir";
 import { loadConfig } from "./settings";
@@ -47,9 +48,6 @@ export async function briefPath(task: Task): Promise<string> {
   const current = await readFile(path, "utf8").catch(() => null);
   if (current === override) return path;
 
-  await mkdir(OVERRIDE_DIR, { recursive: true });
-  const temp = `${path}.${process.pid}.tmp`;
-  await writeFile(temp, override, "utf8");
-  await rename(temp, path);
+  await writeAtomic(path, override);
   return path;
 }

@@ -42,6 +42,57 @@ async function usable(paseo: Paseo, agentId: string) {
   return handle;
 }
 
+/** What `runStage` needs to queue a stage behind whatever the agent is doing. */
+export interface StageGate {
+  /** The lane to wait in, or null for work that will make its own agent. */
+  agentId: string | null;
+  ready(): Promise<boolean>;
+}
+
+/**
+ * Whether the agent would take a turn right now.
+ *
+ * Deliberately not `usable()`. That answers null for both "the daemon did not
+ * reply" and "the agent is gone", and those have to part company here: the first
+ * is no evidence of anything and the wait continues, while the second will never
+ * become true and the stage has to fail rather than sit in a lane forever. R6, R9.
+ */
+async function agentFree(paseo: Paseo, agentId: string): Promise<boolean> {
+  const handle = paseo.agents.ref(agentId);
+  const refreshed = await handle.refresh().catch(() => null);
+  if (!refreshed) return false;
+  if (handle.archivedAt || handle.status === "closed") {
+    throw new Error("the agent is gone. Retry the record to make a new one");
+  }
+  return !handle.activeTurn;
+}
+
+/**
+ * The lane a task's turn will wait in, worked out from the record alone.
+ *
+ * No SDK call, because this runs under the claim and has to answer before the
+ * stage is written. A task running intake's own model queues on intake's agent,
+ * which is the same agent James types into, and that is the whole reason the queue
+ * exists. A task whose agent does not exist yet answers null: nothing can be
+ * queued on an agent nobody shares, so it never waits.
+ */
+export async function gateFor(
+  paseo: Paseo,
+  record: IntakeRecord,
+  task: Task,
+): Promise<StageGate> {
+  const settings = await loadConfig();
+  const own = needsOwnAgent(settings, task) && record.workspaceId;
+  const agentId = own
+    ? (record.taskAgents?.[task] ?? null)
+    : (record.agentId ?? null);
+
+  return {
+    agentId,
+    ready: async () => (agentId ? agentFree(paseo, agentId) : true),
+  };
+}
+
 /**
  * The agent for a task the settings gave a model of its own, created on first
  * use in the workspace intake already made.
@@ -68,9 +119,9 @@ async function createTaskAgent(
     },
     title: `${TASK_LABELS[task]} PR #${record.number}`,
     labels: {
-      "inbox": "pr",
-      "pr": String(record.number),
-      "repo": record.repo,
+      inbox: "pr",
+      pr: String(record.number),
+      repo: record.repo,
       "radar-task": task,
     },
   });
@@ -83,7 +134,9 @@ async function createTaskAgent(
     if (!fresh) return;
     fresh.taskAgents = { ...fresh.taskAgents, [task]: id };
   });
-  log(`${record.key}: ${task} got its own agent ${id}, ${providerString(spec)}`);
+  log(
+    `${record.key}: ${task} got its own agent ${id}, ${providerString(spec)}`,
+  );
   return id;
 }
 
@@ -107,7 +160,8 @@ async function agentForTurn(paseo: Paseo, record: IntakeRecord, task: Task) {
     const existing = record.taskAgents?.[task];
     const live = existing ? await usable(paseo, existing) : null;
     if (live) return live;
-    if (existing) log(`${record.key}: the ${task} agent is gone, making another`);
+    if (existing)
+      log(`${record.key}: the ${task} agent is gone, making another`);
 
     const created = await createTaskAgent(paseo, record, task, spec);
     const handle = await usable(paseo, created);
@@ -149,9 +203,12 @@ export async function askAgent(
   const handle = await agentForTurn(paseo, record, task);
 
   // Sending into an open turn interrupts it, and that turn may be James talking to
-  // the agent himself. There is no queue option, so the only safe answer is to
-  // refuse and let him press again.
+  // the agent himself. The lane in `runStage` is what stops this being reached:
+  // a press on a busy agent waits rather than being refused. This stays as the
+  // backstop for any caller that queued on the wrong lane, and is logged loudly
+  // because reaching it means the gate named an agent the turn did not go to.
   if (handle.activeTurn) {
+    log(`${record.key}: ${task} reached a mid-turn agent despite the queue`);
     throw new Error("the agent is mid-turn. Let it finish, then press again");
   }
 

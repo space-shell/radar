@@ -1,11 +1,7 @@
-import {
-  appendFile,
-  mkdir,
-  readFile,
-  rename,
-  writeFile,
-} from "node:fs/promises";
+import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { writeAtomic } from "./atomic";
+import { coalesce } from "./single-flight";
 import { pullRequestUrl, statusNote, type IntakeRecord } from "../shared/inbox";
 import type { LinearOpenIssue } from "../shared/linear";
 import { currentNode, STAGE_LABELS } from "../shared/review";
@@ -185,7 +181,7 @@ function issueLine(issue: LinearOpenIssue): string {
  * after every ledger line, and a network call on each would make a log line cost a
  * round trip. The Linear sweep refreshes its half before calling here.
  */
-export async function writeOpen(): Promise<void> {
+async function regenerate(): Promise<void> {
   const state = await loadState();
   // One rule, and it is the inbox's rule: undismissed means outstanding. Dismiss
   // is the only gesture that closes a row, so a row that has not had it is still
@@ -215,11 +211,17 @@ export async function writeOpen(): Promise<void> {
     "",
   ].join("\n");
 
-  await mkdir(STATE_DIR, { recursive: true });
-  const temp = `${OPEN_PATH}.${process.pid}.tmp`;
-  await writeFile(temp, body, "utf8");
-  await rename(temp, OPEN_PATH);
+  await writeAtomic(OPEN_PATH, body);
 }
+
+/**
+ * The file is a full regeneration from state, so two overlapping asks would write
+ * the same answer twice, and the slower one could be the one that lands: a body
+ * read before the newer state was written, renamed over the top of it. Coalescing
+ * makes the last write the freshest read, and makes a burst of ledger lines cost
+ * one rewrite rather than one each. AC-AF26.
+ */
+export const writeOpen = coalesce(regenerate);
 
 /**
  * The call site every hook uses. A ledger that cannot be written is a failure to

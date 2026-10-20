@@ -1,84 +1,17 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { highlight, success } from "../shared/colour";
+import { highlight } from "../shared/colour";
 import { Text, View } from "react-native";
+import { nodeAppearance, nodeLabel } from "../shared/appearance";
 import {
   MAP_NODES,
-  STAGE_LABELS,
   currentNode,
-  nodeStatus,
-  type MapNode,
+  displayStatus,
+  type DisplayStatus,
   type Reviewable,
-  type StageStatus,
 } from "../shared/review";
 
-export interface NodeAppearance {
-  /** Carries the status without colour, so colour is never the only signal. AC-C3, AC-J3. */
-  glyph: string;
-  glyphColor: string;
-  background: string;
-  borderColor: string;
-  borderStyle: "solid" | "dashed";
-}
-
-/**
- * One mapping from status to appearance, shared by the row strip and the metro map,
- * so the two can never drift apart.
- */
-export function nodeAppearance(
-  status: StageStatus,
-  theme: PluginTheme,
-): NodeAppearance {
-  const { colors } = theme;
-  switch (status) {
-    case "running":
-      return {
-        glyph: "▸",
-        glyphColor: highlight(colors.accent),
-        background: colors.surface2,
-        borderColor: highlight(colors.accent),
-        borderStyle: "solid",
-      };
-    case "done":
-      return {
-        glyph: "✓",
-        glyphColor: colors.accentForeground,
-        background: success(colors.statusSuccess),
-        borderColor: success(colors.statusSuccess),
-        borderStyle: "solid",
-      };
-    case "skipped":
-      return {
-        glyph: "–",
-        glyphColor: colors.foregroundMuted,
-        background: "transparent",
-        borderColor: colors.foregroundMuted,
-        borderStyle: "dashed",
-      };
-    case "failed":
-      return {
-        glyph: "!",
-        glyphColor: colors.accentForeground,
-        background: colors.statusDanger,
-        borderColor: colors.statusDanger,
-        borderStyle: "solid",
-      };
-    default:
-      return {
-        glyph: "",
-        glyphColor: colors.foregroundMuted,
-        background: "transparent",
-        borderColor: colors.border,
-        borderStyle: "solid",
-      };
-  }
-}
-
-export function nodeLabel(node: MapNode, status: StageStatus): string {
-  return `${STAGE_LABELS[node]}: ${status}`;
-}
-
 interface StageNodeProps {
-  status: StageStatus;
+  status: DisplayStatus;
   theme: PluginTheme;
   /** The current node draws a thicker accent edge, so it reads apart from both
    * completed and pending neighbours. AC-J4. */
@@ -181,7 +114,7 @@ export function StageStrip({ record, theme, size = 14 }: StageStripProps) {
     <View
       accessibilityRole="progressbar"
       accessibilityLabel={MAP_NODES.map((node) =>
-        nodeLabel(node, nodeStatus(record, node)),
+        nodeLabel(node, displayStatus(record, node)),
       ).join(", ")}
       // No gap, in either row. A three point gap each side of every connector
       // left the line floating between two squares it never reached, which is
@@ -193,7 +126,7 @@ export function StageStrip({ record, theme, size = 14 }: StageStripProps) {
         <View key={node} style={{ flexDirection: "row", alignItems: "center" }}>
           {index > 0 ? <Connector theme={theme} length={6} /> : null}
           <StageNode
-            status={nodeStatus(record, node)}
+            status={displayStatus(record, node)}
             theme={theme}
             current={node === current}
             size={size}

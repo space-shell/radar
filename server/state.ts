@@ -1,6 +1,7 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { homedir } from "node:os";
+import { writeAtomic } from "./atomic";
 import type { IntakeRecord } from "../shared/inbox";
 import type { LinearOpenIssue } from "../shared/linear";
 
@@ -63,10 +64,7 @@ async function readJson<T>(path: string, fallback: T): Promise<T> {
 }
 
 async function writeJson(path: string, value: unknown): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  const temp = `${path}.${process.pid}.tmp`;
-  await writeFile(temp, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-  await rename(temp, path);
+  await writeAtomic(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 export const statePath = join(STATE_DIR, "seen.json");

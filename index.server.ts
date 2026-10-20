@@ -44,6 +44,7 @@ import {
 import { dismissRecord, retryRecord } from "./server/actions";
 import { markRecordSeen, readInboxState } from "./server/inbox";
 import { note, writeOpen } from "./server/ledger";
+import { stopLanes } from "./server/queue";
 import { setStageStatus } from "./server/stages";
 import { runStageFor, undoStageFor } from "./server/stage-actions";
 import { adoptFindings } from "./server/qa";
@@ -438,7 +439,10 @@ export default function contribute(server: PluginServerContext) {
 
   const schedule = (seconds: number) => {
     if (stopped) return;
+    // Unreferenced, so the poll is something the daemon does while it is up rather
+    // than a reason it stays up.
     timer = setTimeout(run, seconds * 1000);
+    timer.unref();
   };
 
   const run = async () => {
@@ -458,6 +462,9 @@ export default function contribute(server: PluginServerContext) {
     stopped = true;
     if (timer) clearTimeout(timer);
     detachHooks();
+    // Anything queued behind a busy agent is dropped rather than left holding a
+    // timer and a promise nobody will ever settle.
+    stopLanes("the plugin stopped");
     log("stopped");
   };
 }

@@ -704,6 +704,63 @@ The tick keeps both passes underneath them.
 - [ ] **AC-AE10** A live turn ending puts its summary on the screen without the tick: `paseo plugin logs radar` shows `ended a turn, settling stages and summaries` and the detail view fills, with no `collected the summary` from a floor pass behind it. Awaiting the app.
 - [ ] **AC-AE11** A stage left running by a killed agent settles from the event rather than after a minute. Awaiting the app.
 
+## AF. A turn waits for the agent rather than failing
+
+Three faults, one commit, and one root cause wearing three coats: work already
+under way was invisible to the thing deciding whether to start more.
+
+Under the default settings every task runs on the record's own agent, which is
+also the agent James types into. A press landing on a busy agent was refused,
+and because QA and verification answer the press before the work ends, the
+refusal arrived after a green toast: the press was lost and the node turned red
+behind a screen that said it had started. He asked for it to queue instead.
+
+Underneath that, a stage could be marked `failed` while it was still running.
+The reconciler fails any running agent stage whose agent reads stopped, and
+`idle` is a stopped status, so the prep window between claiming a stage and
+sending its turn was enough: the node offered Run, the claim check passed, and
+two QA turns landed on one agent. A queue that makes pressing cheap makes that
+routine, so it is closed here rather than later.
+
+And the ledger lost lines. `writeOpen` wrote one temp path per process while
+`note()` left the queue that serialised it, so two overlapping writers raced one
+rename and the loser's line vanished. Observed live at 07:56:12 during a dismiss.
+
+Queued is a sub-state of `running`, not a sixth status: `queuedAt` is set at the
+press and replaced by `startedAt` at promotion. A sixth enum member would blank
+every record for a reader on an older copy of the schema, since zod rejects an
+unknown member where it merely strips an unknown key, and it would break the
+one rule that reads `running` to tell a QA turn from a summary turn.
+
+- [x] **AC-AF1** A free lane runs the body immediately, and `start` is invoked synchronously at promotion, so nothing can see the lane idle with a promoted head. Verified by probe.
+- [x] **AC-AF2** A second press waits for the first body to settle, and three waiters run in press order. Head-of-line blocking is intended: the lane is one agent, and FIFO is the order the presses were made. Verified by probe.
+- [x] **AC-AF3** A body that throws still releases its lane. The release is a `finally` inside the lane rather than discipline at a call site. Verified by probe.
+- [x] **AC-AF4** Two agent ids are two lanes. A record whose settings give QA its own model has two agents that genuinely run at once. Verified by probe.
+- [x] **AC-AF5** A blocked head is promoted by the lane's own timer and nothing else: 2s, backing off by half each time, capped at 10s, every timer unreferenced so a waiting lane cannot hold the daemon open. No hook wiring and no tick wiring, because nothing documents whether `agent.turn_ended` fires before or after the daemon clears `activeTurn`. Verified by probe.
+- [x] **AC-AF6** Two wakes arriving together promote the head exactly once. Verified by probe.
+- [x] **AC-AF7** A readiness check that throws rejects that one entry with its own error and promotes the next. Verified by probe.
+- [x] **AC-AF8** A lane whose agent never frees waits forever. No timeout: Cancel is the escape hatch and a restart clears it, which is the decision James made. Verified by probe.
+- [x] **AC-AF9** A cancelled waiter leaves from the middle of its lane and the entries behind it keep their order. Cancelling the running head is ignored, because the body owns its own outcome. Verified by probe.
+- [x] **AC-AF10** Plugin cleanup clears every lane timer and rejects every waiter. Verified by probe.
+- [x] **AC-AF11** The press claims the stage as `running` with a `queuedAt` and no `startedAt`. The claim is what stops a second press, so a queued stage holds one. Verified by probe.
+- [x] **AC-AF12** Promotion replaces `queuedAt` with `startedAt`, and the turn follows it. `startedAt` dates from the turn rather than the press, because the twenty minute timeout counts from it and QA reads it to decide whether a findings file belongs to this run. Verified by probe.
+- [x] **AC-AF13** Nothing of the stage body runs while the press waits. The lane wraps the whole body, not the turn inside it: QA clears its findings file before it asks, so a gate around the turn would destroy a review and then wait an hour, and verification reads the preview URL before it asks, so it would name a deployment built from code the worktree no longer has. AC-F3, AC-F5. Verified by probe.
+- [x] **AC-AF14** A second Run while the first is queued is refused by the claim, exactly as it is refused while a turn is in flight. Verified by probe.
+- [x] **AC-AF15** Cancel on a queued stage returns it to `pending`, sends no turn, leaves the findings file alone, and writes `qa cancelled before it started` to the ledger. A press freed later does not revive it. It reuses `radar.stage.set`, because cancelling is "put this stage back to pending" and that call already exists. Verified by probe.
+- [x] **AC-AF16** The same call once the turn has started is refused with `the turn has already started`. Nothing is awaited between reading that flag and aborting, so the two cannot interleave. Verified by probe.
+- [x] **AC-AF17** Skip on a queued stage is refused with `QA is queued. Cancel it first`, rather than silently dropping a press that is holding a lane. Verified by probe.
+- [x] **AC-AF18** An agent that reads closed or archived fails the queued stage with the wording Retry answers, because waiting for an agent that will never be free is waiting forever. An agent the daemon merely did not answer for leaves the press queued: that is no evidence of anything. R6, R9. Verified by probe.
+- [x] **AC-AF19** The reconciler leaves a queued stage alone while this process is still holding it, and spends no `paseo inspect` on it. Verified by probe.
+- [x] **AC-AF20** After a restart, a queued stage returns to `pending` with no error, because the queue was memory and nothing is left to promote it. It falls out of the registry being empty rather than being special-cased, and it is the behaviour James chose. Verified by probe.
+- [x] **AC-AF21** The reconciler never fails a stage this process has in flight, however the agent reads. This is the second defect: the agent is idle for the whole prep window, and failing a stage there handed the node a Run control for work already under way. A stage nobody is holding still fails on the same reading, which is what the rule is for. Verified by probe.
+- [x] **AC-AF22** A findings file written before promotion is still not adopted. Verified by probe.
+- [x] **AC-AF23** A queued stage offers Cancel and nothing else. A started one still offers nothing, which is what the map has always said about a running stage. Verified by probe.
+- [x] **AC-AF24** Cancel carries no currency guard. Undoing acknowledge while QA is queued makes acknowledge current again, and a currency guard would leave that press holding a lane with no way to let go of it. The converse, a queued QA withdrawing acknowledge's Undo, is the later-stage rule doing what it is for. Verified by probe.
+- [x] **AC-AF25** Queued parts from running in glyph, fill and border style, so neither colour nor shape alone carries it, and no two statuses share a glyph. AC-C3. Verified by probe.
+- [x] **AC-AF26** Two overlapping `OPEN.md` writes both land, the file holds one whole body rather than half of each, that body is the freshest read, and no temp file survives. Every writer now renames a uniquely named temp file, and the regeneration is coalesced, so N overlapping notes cost at most one trailing rewrite and the last body written is the newest. Verified by probe.
+- [ ] **AC-AF27** Pressing Run QA while typing into the agent leaves the node reading `queued` with a Cancel control, and it starts on its own within ten seconds of the turn ending. Awaiting the app.
+- [ ] **AC-AF28** Cancel on a queued node returns it to `ready`, and no turn is ever sent. Awaiting the app.
+
 ## Awaiting the app
 
 Every criterion below is built and typechecked. None can be ticked from here: each asserts
@@ -713,6 +770,8 @@ invocation command, so there is no route to them except the running app.
 | Criterion                      | What settles it                                                                                                 |
 | ------------------------------ | --------------------------------------------------------------------------------------------------------------- |
 | AC-AE10                        | One record taken in with the app open, watching the card fill before the next tick                              |
+| AC-AF27                        | One Run QA press made while a turn is open on the same agent                                                    |
+| AC-AF28                        | One Cancel press on the node that press left queued                                                             |
 | AC-AE11                        | One `paseo agent kill` on an agent with a stage running                                                         |
 | AC-A2, AC-A3, AC-A4            | One Retry press on an `orphaned` or `failed` record                                                             |
 | AC-A7, AC-A9                   | One Dismiss press, then Restore                                                                                 |

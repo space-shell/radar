@@ -26,7 +26,7 @@ import {
   sweepNow,
   undoStageAction,
 } from "../shared/inbox";
-import { STAGE_LABELS, type ReviewStage } from "../shared/review";
+import { AGENT_STAGES, STAGE_LABELS, type ReviewStage } from "../shared/review";
 import { shortKey } from "./format";
 
 const INBOX_QUERY = ["radar", "inbox"];
@@ -229,8 +229,17 @@ export function useStageAction(refresh: () => void) {
         toast.error(`${what} failed: ${result.error ?? "no reason given"}`);
         return;
       }
+      /*
+       * A stage that sends an agent a turn answers the press the moment it has
+       * claimed the stage, so "done" was a green toast beside a node whose work
+       * had not begun. The queue widens that gap on purpose: the press may be
+       * waiting for the agent to finish what James is typing into it. AC-AF27.
+       */
+      const started = AGENT_STAGES.includes(input.stage);
       toast.show(
-        input.direction === "run" ? `${what} done` : `${what} undone`,
+        input.direction === "run"
+          ? `${what} ${started ? "started" : "done"}`
+          : `${what} undone`,
         {
           variant: "success",
         },

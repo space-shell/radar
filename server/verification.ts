@@ -13,7 +13,7 @@ import { briefPath } from "./briefs";
 import { previewUrl } from "./preview";
 import { setupCommand, setupLines } from "./setup";
 import { runStage, type StageResult } from "./stages";
-import { askAgent, type Paseo } from "./turn";
+import { askAgent, gateFor, type Paseo } from "./turn";
 
 function prompt(
   record: IntakeRecord,
@@ -93,6 +93,9 @@ export function runVerification(
 
       return summarise(file.verification);
     },
-    { background: true },
+    {
+      background: true,
+      gate: (record) => gateFor(paseo, record, "verification"),
+    },
   );
 }

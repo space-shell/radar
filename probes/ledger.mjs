@@ -1,7 +1,8 @@
 import "./guard.mjs";
-import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { isoWeek, keyUrl, ledgerPath, note, record, writeOpen, LEDGER_DIR, OPEN_PATH } from "../server/ledger.ts";
 import { STATE_DIR, statePath } from "../server/state.ts";
+import { writeAtomic } from "../server/atomic.ts";
 
 let failures = 0;
 const check = (name, got, want) => {
@@ -59,6 +60,28 @@ check("L10 its current stage, state and age", [open.includes("QA, created, track
 check("L10b an archived merged row reads as settled, not as work", open.includes("merged, settled, archived, tracked 3d"), true);
 await writeOpen();
 check("L11 regenerating leaves one copy", (await readFile(OPEN_PATH, "utf8")).match(/owner\/web#1/g)?.length, 1);
+
+// AF26. Two writers of OPEN.md at once. The defect was one fixed temp name per
+// process: both renames chose the same path, the second got ENOENT, and the line
+// it was regenerating for was lost. Nothing sequential could catch it, which is
+// why L9 to L11 never did.
+const openState = (keys) => JSON.stringify({ intake: keys.map((n) => ({
+  ...base, key: `owner/web#${n}`, number: n, state: "created",
+  review: { acknowledge: { status: "done" }, qa: { status: "pending" }, verification: { status: "pending" }, feedback: { status: "pending" } },
+})) });
+await writeAtomic(statePath, openState([1, 2, 3]));
+const slow = writeOpen();
+// Written between the two asks, so the trailing run has something newer to read
+// and the body on disk says which of the two landed.
+await writeAtomic(statePath, openState([1, 2, 3, 4]));
+const fast = writeOpen();
+const settled = await Promise.allSettled([slow, fast]);
+check("AF26 two concurrent writeOpen calls both resolve", settled.map((r) => r.status), ["fulfilled", "fulfilled"]);
+const raced = await readFile(OPEN_PATH, "utf8");
+check("AF26b OPEN.md is one whole body, not a half of each", [raced.startsWith("# Open\n"), raced.endsWith("\n"), raced.match(/^# Open$/gm)?.length], [true, true, 1]);
+// Coalescing is what makes this the newer body rather than either one at random.
+check("AF26c the body on disk is the freshest read", [raced.includes("owner/web#4"), raced.includes("owner/web#1")], [true, true]);
+check("AF26d no temp file survives the race", (await readdir(STATE_DIR)).filter((name) => name.endsWith(".tmp")), []);
 
 // L12. keyUrl.
 check("L12 keyUrl", [keyUrl("owner/web#9457"), keyUrl("nonsense"), keyUrl("a/b#x")], ["https://github.com/owner/web/pull/9457", undefined, undefined]);

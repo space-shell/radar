@@ -2,6 +2,10 @@
 dir="${PROBE_FIXTURES:?}"
 case "$1" in
   inspect)
+    # Every inspect is recorded, because two probes assert that a decision was
+    # reached without one: an inspect costs up to thirty seconds and a queued or
+    # in-flight stage must never pay it.
+    echo "$2" >> "$dir/inspected.log"
     file="$dir/agent-$2.json"
     if [ ! -f "$file" ]; then
       echo '{"error":{"code":"AGENT_NOT_FOUND"}}' >&2
@@ -21,6 +25,11 @@ case "$1" in
       exit 1
     fi
     if [ -f "$dir/agents.json" ]; then cat "$dir/agents.json"; else echo "[]"; fi
+    ;;
+  plugin)
+    # `plugin ls --json`, which is how the server finds its own directory and so
+    # the briefs it ships with.
+    cat "$dir/plugins.json"
     ;;
   workspace)
     # `workspace archive <id>`

@@ -10,7 +10,8 @@ import {
 import { log } from "./log";
 import { briefPath } from "./briefs";
 import { loadState, STATE_DIR, updateState } from "./state";
-import { askAgent, type Paseo } from "./turn";
+import { inLane, isLaneCancelled } from "./queue";
+import { askAgent, gateFor, type Paseo } from "./turn";
 
 /** Ten minutes. A summary of a diff the agent has already read is not a review. */
 const SUMMARY_TIMEOUT_MS = 10 * 60_000;
@@ -75,10 +76,22 @@ export interface SummaryResult {
   error?: string;
 }
 
-/** The turn itself. Nothing waits on it, so its outcome is written, not returned. */
+/**
+ * The turn itself. Nothing waits on it, so its outcome is written, not returned.
+ *
+ * Queued behind whatever the agent is doing, rather than refused. A summary is
+ * regenerated automatically when a record changes, so colliding with James typing
+ * into the same agent was the common case, and it showed as a red line on the card
+ * for something that was only ever a moment's overlap.
+ *
+ * The claim is taken by the caller and released here, so the spinner holds across
+ * the wait with nothing further to do. No cancel: a summary has no node on the map
+ * to put a control on.
+ */
 async function summarise(record: IntakeRecord, paseo: Paseo): Promise<void> {
   const key = record.key;
-  try {
+
+  const turn = async (): Promise<void> => {
     const output = summaryPath(record.repo, record.number);
     await prepareArtifact(output);
     // A stale file from a previous run must not be read as this run's output.
@@ -97,7 +110,19 @@ async function summarise(record: IntakeRecord, paseo: Paseo): Promise<void> {
     await store(key, file);
     await clearArtifact(output);
     log(`summarised ${key}`);
+  };
+
+  try {
+    const gate = await gateFor(paseo, record, "summary");
+    if (gate.agentId) await inLane(gate.agentId, gate.ready, turn);
+    else await turn();
   } catch (caught) {
+    // A queued summary dropped at shutdown is not a failed summary. No turn was
+    // sent, so there is nothing to report against the record.
+    if (isLaneCancelled(caught)) {
+      log(`summary for ${key} dropped before it started`);
+      return;
+    }
     const error = caught instanceof Error ? caught.message : String(caught);
     await setError(key, error);
     log(`summary failed for ${key}: ${error}`);
