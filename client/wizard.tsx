@@ -26,6 +26,7 @@ import {
 import { ConfirmButton } from "./confirm";
 import { age } from "../shared/format";
 import { MultilineInput } from "./multiline";
+import { Prose } from "./prose";
 import {
   useCheckAnchors,
   useFeedback,
@@ -311,7 +312,7 @@ export function Wizard({
       >
         <Text style={styles.back}>← Map</Text>
       </Pressable>
-      <Text style={styles.title}>{title}</Text>
+      <Prose style={styles.title}>{title}</Prose>
     </View>
   );
 
@@ -366,7 +367,7 @@ export function Wizard({
     return (
       <View style={styles.screen}>
         {header}
-        <Text style={styles.danger}>{data.error}</Text>
+        <Prose style={styles.danger}>{data.error}</Prose>
         <Text style={styles.muted}>
           Run QA from the review map, then come back.
         </Text>
@@ -415,7 +416,7 @@ export function Wizard({
             >
               {finding.severity}
             </Text>
-            <Text style={styles.body}>{finding.body}</Text>
+            <Prose style={styles.body}>{finding.body}</Prose>
           </View>
         </SettingsCard>
 
@@ -486,9 +487,9 @@ export function Wizard({
               >
                 {entry.outcome}
               </Text>
-              <Text style={styles.body}>{entry.step}</Text>
+              <Prose style={styles.body}>{entry.step}</Prose>
               {entry.detail.trim().length > 0 ? (
-                <Text style={styles.muted}>{entry.detail}</Text>
+                <Prose style={styles.muted}>{entry.detail}</Prose>
               ) : null}
             </View>
           ))
@@ -555,19 +556,19 @@ export function Wizard({
         <SettingsCard>
           <View style={styles.sent}>
             <Text style={styles.outcome}>Body</Text>
-            <Text style={body.length > 0 ? styles.body : styles.muted}>
+            <Prose style={body.length > 0 ? styles.body : styles.muted}>
               {body.length > 0 ? body : "No body."}
-            </Text>
+            </Prose>
           </View>
         </SettingsCard>
 
         {sending.map((finding) => (
           <SettingsCard key={anchorKey(finding)}>
             <View style={styles.sent}>
-              <Text style={styles.anchor}>
+              <Prose style={styles.anchor}>
                 {finding.path}:{finding.line} {finding.side}
-              </Text>
-              <Text style={styles.body}>{commentBody(finding, draft)}</Text>
+              </Prose>
+              <Prose style={styles.body}>{commentBody(finding, draft)}</Prose>
             </View>
           </SettingsCard>
         ))}
@@ -577,12 +578,12 @@ export function Wizard({
         {dropped.map((finding) => (
           <SettingsCard key={anchorKey(finding)}>
             <View style={styles.excluded}>
-              <Text style={styles.anchor}>
+              <Prose style={styles.anchor}>
                 {finding.path}:{finding.line} {finding.side}
-              </Text>
-              <Text style={styles.fault}>
+              </Prose>
+              <Prose style={styles.fault}>
                 Excluded: {faults.get(anchorKey(finding))?.reason}
-              </Text>
+              </Prose>
             </View>
           </SettingsCard>
         ))}

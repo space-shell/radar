@@ -20,6 +20,7 @@ import {
   useRetryingKeys,
   useSweep,
 } from "./queries";
+import { Prose } from "./prose";
 import { StageStrip } from "./stages";
 import { StatusBadge } from "./status";
 import { Wizard } from "./wizard";
@@ -398,7 +399,7 @@ export function Inbox({
       </View>
 
       {error ? (
-        <Text style={styles.failureBanner}>Unavailable: {String(error)}</Text>
+        <Prose style={styles.failureBanner}>Unavailable: {String(error)}</Prose>
       ) : null}
 
       <ScrollView>

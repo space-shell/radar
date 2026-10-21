@@ -22,6 +22,7 @@ import {
 import { stageEvents, type StageEvent } from "../shared/machines/stage";
 import { statusWord } from "../shared/appearance";
 import { ConfirmButton } from "./confirm";
+import { Prose } from "./prose";
 import { age, issueKey, recordMeta } from "../shared/format";
 import {
   useActingKeys,
@@ -403,9 +404,9 @@ export function Detail({
         </Text>
       </Pressable>
     ) : (
-      <Text style={styles.title}>
+      <Prose style={styles.title}>
         #{record.number} {record.title}
-      </Text>
+      </Prose>
     );
 
   return (
@@ -513,14 +514,14 @@ export function Detail({
 
                   {/* What the stage produced, in a few words. "7 findings". No tap. */}
                   {stage?.note ? (
-                    <Text style={styles.nodeNote}>{stage.note}</Text>
+                    <Prose style={styles.nodeNote}>{stage.note}</Prose>
                   ) : null}
                   {/* A failure says why where it happened, with no further tap. AC-J6. */}
                   {stage?.error ? (
-                    <Text style={styles.nodeError}>{stage.error}</Text>
+                    <Prose style={styles.nodeError}>{stage.error}</Prose>
                   ) : null}
                   {selected && when ? (
-                    <Text style={styles.nodeTiming}>{when}</Text>
+                    <Prose style={styles.nodeTiming}>{when}</Prose>
                   ) : null}
                   {selected && expandable ? (
                     <View style={styles.actions}>
@@ -614,9 +615,9 @@ export function Detail({
           <StatusBadge record={record} theme={theme} />
           <Text style={styles.footerState}>{recordMeta(record)}</Text>
         </View>
-        <Text style={styles.footerLine}>{record.key}</Text>
+        <Prose style={styles.footerLine}>{record.key}</Prose>
         {record.lastError ? (
-          <Text style={styles.footerError}>{record.lastError}</Text>
+          <Prose style={styles.footerError}>{record.lastError}</Prose>
         ) : null}
       </View>
     </View>

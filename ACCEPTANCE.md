@@ -851,6 +851,30 @@ pressable and watchable.
 - [x] **AC-AI3** A record with every review stage done or skipped has `currentNode` of `dismiss`, which the strip does not draw, so no square reads current. That is the right answer rather than a gap: the pipeline is finished and nothing on the strip is outstanding. Verified by probe.
 - [x] **AC-AI4** The strip's accessibility label names four stops, in pipeline order, and never says Dismiss. Verified by probe.
 
+## AJ. Text that can be copied off the screen
+
+Nothing on the detail view was blocking selection. There was no rule at all,
+only an absence, and Android is where the absence shows.
+
+React Native's `Text` takes `selectable`, it defaults to undefined
+(`Libraries/Text/Text.js:139`), and undefined reaches the Android view as
+false, so a long press does nothing. The desktop app hid this for as long as it
+has existed: react-native-web renders `Text` as a `div` and writes
+`user-select` only when the prop is set either way, so with the prop absent the
+browser's own default left every string selectable there. The phone is the
+first place the plugin's silence on the matter could be seen. The host app
+takes the other side of the same decision explicitly, opting in per string on
+the values worth copying, which is the convention followed here.
+
+`Prose` is the name for that decision. It is content, `Text` is a label, and
+which is which is readable at the call site rather than inferred from a style
+name.
+
+- [x] **AC-AJ1** Content renders through `Prose`, which is `Text` with `selectable` set: the pull request title, the summary's changes, risk and scope, a stage's note, error and timing, the record key and last error in the footer, the inbox's failure banner, a finding's own words, a verification step and its detail, the review body and each comment as it will be posted, an anchor, and the reason a comment was excluded. Verified by construction: `client/prose.tsx` is the only component that sets the prop, and every one of those call sites names it.
+- [x] **AC-AJ2** `Text` keeps meaning a label. The step counter, the status word under a node, a section heading, a severity chip and a badge are not worth copying and stay unselectable, so a long press in that half of the screen still does nothing. Verified by construction.
+- [x] **AC-AJ3** Text inside a `Pressable` stays `Text`. Selection and a press both begin with a long hold, and a stage node, the summary's collapse toggle, every link and the back control are each worth more as the thing they do. One string pays for this: when the record has an agent, the pull request title is the control that opens it, so the title is copyable on a record without an agent and not on one with it. Verified by construction.
+- [ ] **AC-AJ4** A long press on the summary's risk line on Android raises the selection handles and Copy puts the line on the clipboard. The prop reaches a native text view, which no probe here can see. Awaiting the app.
+
 ## Awaiting the app
 
 Every criterion below is built and typechecked. None can be ticked from here: each asserts
@@ -861,6 +885,7 @@ invocation command, so there is no route to them except the running app.
 | ------------------------------ | --------------------------------------------------------------------------------------------------------------- |
 | AC-AE10                        | One record taken in with the app open, watching the card fill before the next tick                              |
 | AC-AF27                        | One Run QA press made while a turn is open on the same agent                                                    |
+| AC-AJ4                         | One long press on the summary's risk line, on the Android phone                                                 |
 | AC-AF28                        | One Cancel press on the node that press left queued                                                             |
 | AC-AG9                         | Two presses made during one open turn, QA then verification                                                     |
 | AC-AH6, AC-AH7                 | One walk through a record whose findings share a line, typing in the box at each step                           |
