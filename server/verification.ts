@@ -3,6 +3,7 @@ import type { VerificationStep } from "../shared/findings";
 import { pullRequestUrl, type IntakeRecord } from "../shared/inbox";
 import {
   findingsPath,
+  inFindingsLane,
   mergeVerification,
   readVerification,
   verificationPath,
@@ -66,33 +67,37 @@ export function runVerification(
   return runStage(
     key,
     "verification",
-    async (record) => {
-      const body = await pullRequestBody(record.repo, record.number);
-      const preview = previewUrl(body, record.number);
+    (record) =>
+      // Taken for the whole body, not just the merge: the merge reads a file QA's
+      // agent may be about to overwrite, so the two stages are held apart rather
+      // than their last writes. AC-AG6.
+      inFindingsLane(record.key, async () => {
+        const body = await pullRequestBody(record.repo, record.number);
+        const preview = previewUrl(body, record.number);
 
-      const scratch = verificationPath(record.repo, record.number);
-      await prepareArtifact(scratch);
-      // A stale file from a previous run must not be read as this run's output.
-      await clearArtifact(scratch);
+        const scratch = verificationPath(record.repo, record.number);
+        await prepareArtifact(scratch);
+        // A stale file from a previous run must not be read as this run's output.
+        await clearArtifact(scratch);
 
-      const brief = await briefPath("verification");
-      await askAgent(
-        paseo,
-        record,
-        "verification",
-        prompt(record, brief, scratch, preview, await setupCommand()),
-      );
+        const brief = await briefPath("verification");
+        await askAgent(
+          paseo,
+          record,
+          "verification",
+          prompt(record, brief, scratch, preview, await setupCommand()),
+        );
 
-      const file = await readVerification(scratch);
-      await mergeVerification(
-        findingsPath(record.repo, record.number),
-        record.key,
-        file.verification,
-      );
-      await clearArtifact(scratch);
+        const file = await readVerification(scratch);
+        await mergeVerification(
+          findingsPath(record.repo, record.number),
+          record.key,
+          file.verification,
+        );
+        await clearArtifact(scratch);
 
-      return summarise(file.verification);
-    },
+        return summarise(file.verification);
+      }),
     {
       background: true,
       gate: (record) => gateFor(paseo, record, "verification"),

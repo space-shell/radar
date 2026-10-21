@@ -13,14 +13,16 @@ import {
   currentNode,
   displayStatus,
   reviewOf,
+  stageBlocked,
   type DisplayStatus,
   type MapNode,
   type ReviewStage,
   type Stage,
 } from "../shared/review";
 import { stageEvents, type StageEvent } from "../shared/machines/stage";
+import { statusWord } from "../shared/appearance";
 import { ConfirmButton } from "./confirm";
-import { age, issueKey, recordMeta } from "./format";
+import { age, issueKey, recordMeta } from "../shared/format";
 import {
   useActingKeys,
   useDismiss,
@@ -101,15 +103,6 @@ function stageAgent(record: IntakeRecord, node: MapNode): string | undefined {
 
 function stageOf(record: IntakeRecord, node: MapNode): Stage | undefined {
   return isReviewStage(node) ? reviewOf(record)[node] : undefined;
-}
-
-/**
- * The status word, which carries what the glyph and the border carry so neither
- * shape nor colour is ever the only signal. AC-J3, AC-J4.
- */
-function statusWord(status: DisplayStatus, current: boolean): string {
-  if (status !== "pending") return status;
-  return current ? "ready" : "waiting";
 }
 
 function styleSheet(theme: PluginTheme, compact: boolean) {
@@ -318,7 +311,7 @@ export function Detail({
    * it is what makes a node inert rather than a control that silently does nothing.
    * AC-J7.
    */
-  const actionsFor = (node: MapNode, isCurrent: boolean): NodeAction[] => {
+  const actionsFor = (node: MapNode): NodeAction[] => {
     if (node === "dismiss") {
       const dismissed = Boolean(record.dismissedAt);
       return [
@@ -382,7 +375,7 @@ export function Detail({
       },
     };
 
-    return stageEvents(record, node, isCurrent).map((type) => controls[type]);
+    return stageEvents(record, node).map((type) => controls[type]);
   };
 
   const timing = (node: MapNode, stage: Stage | undefined): string | null => {
@@ -450,12 +443,15 @@ export function Detail({
           {MAP_NODES.map((node, index) => {
             const status = displayStatus(record, node);
             const isCurrent = node === current;
-            const actions = actionsFor(node, isCurrent);
+            const actions = actionsFor(node);
             const stage = stageOf(record, node);
             const selected = node === openNode;
             const working = busy(node);
-            // "Cannot run yet" is exactly a pending node the pipeline has not reached.
-            const blocked = actions.length === 0 && status === "pending";
+            // The same rule the controls are offered on, asked once and used for
+            // both the word and the dimming, so a node cannot read "waiting"
+            // under a Run button. AC-AG5.
+            const reached = !stageBlocked(record, node);
+            const blocked = status === "pending" && !reached;
             const when = timing(node, stage);
             // Set only where the stage was spawned with an agent of its own, so
             // the control appears exactly where it leads somewhere new.
@@ -496,7 +492,7 @@ export function Detail({
                     // confirm action. A pending feedback node has no action and
                     // still opens onto the wizard, so announcing "no action
                     // available" talked a screen reader past the one thing on it.
-                    accessibilityLabel={`${STAGE_LABELS[node]}, ${statusWord(status, isCurrent)}${
+                    accessibilityLabel={`${STAGE_LABELS[node]}, ${statusWord(status, reached)}${
                       expandable ? "" : ", nothing to open"
                     }`}
                     disabled={!expandable}
@@ -510,7 +506,7 @@ export function Detail({
                     >
                       <Text style={styles.nodeLabel}>{STAGE_LABELS[node]}</Text>
                       <Text style={styles.nodeStatus}>
-                        {statusWord(status, isCurrent)}
+                        {statusWord(status, reached)}
                       </Text>
                     </View>
                   </Pressable>

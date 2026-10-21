@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { IntakeRecord } from "../shared/inbox";
 import { ConfirmButton } from "./confirm";
-import { age } from "./format";
+import { age } from "../shared/format";
 import { BusyDots } from "./spinner";
 
 export interface SummaryCardProps {

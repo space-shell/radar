@@ -20,7 +20,7 @@ import {
 import type { Finding, VerificationStep } from "../shared/findings";
 import { previewStepOf, wizardMachine } from "../shared/machines/wizard";
 import { ConfirmButton } from "./confirm";
-import { age } from "./format";
+import { age } from "../shared/format";
 import { MultilineInput } from "./multiline";
 import {
   useCheckAnchors,

@@ -86,3 +86,17 @@ export function nodeAppearance(
 export function nodeLabel(node: MapNode, status: DisplayStatus): string {
   return `${STAGE_LABELS[node]}: ${status}`;
 }
+
+/**
+ * The status word, which carries what the glyph and the border carry so neither
+ * shape nor colour is ever the only signal. AC-J3, AC-J4.
+ *
+ * `reached` is the same rule the controls are offered on, not the map's idea of
+ * which node is current. A node reading `waiting` under a Run button was the
+ * first thing group AG's change would have produced had the two been allowed to
+ * drift. AC-AG5.
+ */
+export function statusWord(status: DisplayStatus, reached: boolean): string {
+  if (status !== "pending") return status;
+  return reached ? "ready" : "waiting";
+}

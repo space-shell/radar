@@ -36,17 +36,21 @@ export const RUNNABLE_STAGES: readonly ReviewStage[] = [
 export const UNDOABLE_STAGES: readonly ReviewStage[] = ["acknowledge"];
 
 /**
- * Stages that may be passed over. Acknowledge is absent deliberately: it is where
- * the pull request and its summary are read, and the eyes reaction it posts is the
- * one outward signal that the review is under way. Skipping it would claim the
- * review started without anyone having looked. The map and the server both read
- * this, so what is offered and what is allowed cannot disagree.
+ * Stages that may be passed over. Two are absent deliberately.
+ *
+ * Acknowledge is where the pull request and its summary are read, and the eyes
+ * reaction it posts is the one outward signal that the review is under way.
+ * Skipping it would claim the review started without anyone having looked.
+ *
+ * Feedback is where the review is written, which is the whole point of the
+ * pipeline. A record that can be marked finished with nothing said is a record
+ * whose map lies about what was done, and "this one needs nothing from me" is
+ * already Dismiss. AC-AG7.
+ *
+ * The map and the server both read this, so what is offered and what is allowed
+ * cannot disagree.
  */
-export const SKIPPABLE_STAGES: readonly ReviewStage[] = [
-  "qa",
-  "verification",
-  "feedback",
-];
+export const SKIPPABLE_STAGES: readonly ReviewStage[] = ["qa", "verification"];
 
 /** What the run control says. The label is the verb, not the noun on the node. */
 export const STAGE_ACTIONS: Record<ReviewStage, string> = {
@@ -165,6 +169,28 @@ export function laterStagesStarted(
   const review = reviewOf(record);
   return REVIEW_STAGES.slice(REVIEW_STAGES.indexOf(stage) + 1).some(
     (later) => review[later].status !== "pending",
+  );
+}
+
+/**
+ * Whether a stage before this one has still to leave pending.
+ *
+ * What makes a stage inert, replacing "is it the current node". The two agree
+ * everywhere the old rule allowed anything, because a current node has every
+ * earlier stage done or skipped, which is a stricter claim than having left
+ * pending. Where they part is the case the queue created: QA running or queued
+ * leaves verification out of turn forever, and verification is exactly the press
+ * worth queueing behind it. The server never had the currency rule, so this is
+ * the map catching up with what the claim already allowed. AC-AG1, AC-AG2.
+ *
+ * Dismiss sits after every stage and is never blocked: it is how a record is put
+ * down at any point, including before anything has been done to it.
+ */
+export function stageBlocked(record: Reviewable, node: MapNode): boolean {
+  if (node === "dismiss") return false;
+  const review = reviewOf(record);
+  return REVIEW_STAGES.slice(0, REVIEW_STAGES.indexOf(node)).some(
+    (earlier) => review[earlier].status === "pending",
   );
 }
 

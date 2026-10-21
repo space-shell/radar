@@ -7,6 +7,7 @@ import {
   type VerificationStep,
 } from "../shared/findings";
 import { readArtifact, writeArtifact } from "./artifact";
+import { inLane } from "./queue";
 import { STATE_DIR } from "./state";
 
 /**
@@ -63,4 +64,25 @@ export async function mergeVerification(
 /** Writes the file back after the server has merged anything the agent cannot see. */
 export function writeFindings(path: string, file: FindingsFile): Promise<void> {
   return writeArtifact(path, file);
+}
+
+/**
+ * Serialises the two stages that write one record's findings file.
+ *
+ * Under the default settings QA and verification share an agent, so the agent
+ * lane already holds them apart and this grants immediately. It matters where the
+ * settings give each its own model: the two then run on two agents, genuinely at
+ * once, and the file is read-modify-written by one while the other's agent
+ * overwrites it wholesale. A verification merge landing between QA's clear and
+ * its agent's write is lost, and the stage still reports the steps it lost.
+ *
+ * Always taken inside the agent lane, never the other way round, so two stages
+ * acquiring both cannot deadlock. `ready` is a constant: this is a mutex, not a
+ * wait for something outside the process. AC-AG6.
+ */
+export function inFindingsLane<T>(
+  key: string,
+  body: () => Promise<T>,
+): Promise<T> {
+  return inLane(`findings\u0000${key}`, async () => true, body);
 }

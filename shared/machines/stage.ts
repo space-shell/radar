@@ -6,14 +6,18 @@ import {
   isQueued,
   laterStagesStarted,
   nodeStatus,
+  stageBlocked,
   type Reviewable,
   type ReviewStage,
 } from "../review";
 
 export interface StageContext {
   stage: ReviewStage;
-  /** The first node the pipeline has not settled. Only it can be moved on. AC-J4. */
-  isCurrent: boolean;
+  /**
+   * A stage before this one has still to leave pending, so the pipeline has not
+   * reached here and nothing may be done to it yet. AC-J7, AC-AG2.
+   */
+  blocked: boolean;
   /** Anything after this stage has left pending, which withdraws Undo. AC-D6. */
   laterMoved: boolean;
   /** Claimed but not sent: the press is waiting for a busy agent. AC-AF23. */
@@ -47,7 +51,7 @@ export const STAGE_EVENTS: readonly StageEvent["type"][] = [
  * view, in three different syntactic shapes, with the availability of Skip and
  * Undo decided by two `includes` calls forty lines further up. The rows:
  *
- * | status  | current | offered                |
+ * | status  | reached | offered                |
  * | ------- | ------- | ---------------------- |
  * | queued  | any     | Cancel                 |
  * | running | any     | nothing                |
@@ -56,6 +60,11 @@ export const STAGE_EVENTS: readonly StageEvent["type"][] = [
  * | failed  | any     | Run, Reopen, Skip      |
  * | pending | yes     | Run, Skip              |
  * | pending | no      | nothing                |
+ *
+ * "Reached" was "is the current node" until group AG. It is now "every earlier
+ * stage has left pending", which the old reading implies and which admits the
+ * row the queue created: a pending verification behind a running QA, where the
+ * press is worth taking because the lane will hold it. AC-AG1, AC-AG3.
  *
  * The machine does not own the status: the server does, and a stage reaches
  * `done` through the action that performed it, never through a press on this
@@ -84,7 +93,7 @@ export const stageMachine = setup({
       UNDOABLE_STAGES.includes(context.stage) && !context.laterMoved,
     notUndoable: ({ context }) =>
       !UNDOABLE_STAGES.includes(context.stage) || context.laterMoved,
-    reached: ({ context }) => context.isCurrent,
+    reached: ({ context }) => !context.blocked,
     /**
      * The press has not been sent yet, so it can still be taken back.
      *
@@ -148,18 +157,20 @@ export const stageMachine = setup({
 /**
  * Which events the stage will accept, in the order their controls are drawn.
  *
- * The currency check is a guard on `pending`'s own transitions rather than an
+ * Every input is read off the record. Nothing is passed in beside it, so the map
+ * and the server cannot hold different ideas of what the same record allows.
+ *
+ * The reached check is a guard on `pending`'s own transitions rather than an
  * `always` into a waiting state: `resolveState` resolves the value it is given
  * and runs no microsteps, so an eventless transition would never fire here.
  */
 export function stageEvents(
   record: Reviewable,
   stage: ReviewStage,
-  isCurrent: boolean,
 ): StageEvent["type"][] {
   const context: StageContext = {
     stage,
-    isCurrent,
+    blocked: stageBlocked(record, stage),
     laterMoved: laterStagesStarted(record, stage),
     queued: isQueued(record, stage),
   };
