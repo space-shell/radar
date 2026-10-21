@@ -11,10 +11,12 @@ import {
   wizardMachine,
 } from "../shared/machines/wizard.ts";
 import { stageEvents } from "../shared/machines/stage.ts";
-import { nodeAppearance, statusWord } from "../shared/appearance.ts";
+import { nodeAppearance, nodeLabel, statusWord } from "../shared/appearance.ts";
 import { recordMeta } from "../shared/format.ts";
 import {
   currentNode,
+  displayStatus,
+  MAP_NODES,
   REVIEW_STAGES,
   RUNNABLE_STAGES,
   SKIPPABLE_STAGES,
@@ -1298,6 +1300,37 @@ const seedRecord = async (record) => {
     ],
     ["Preview", "Verification", "Finding 3 of 3"],
   );
+}
+
+// AI. The row strip draws the work and not the disposal. The strip is
+// `REVIEW_STAGES`, the detail map is `MAP_NODES`, and the only difference
+// between them is the stop that can never be read on a row: dismissing takes
+// the row off the list, so the square it would fill is not on screen to fill.
+{
+  const settled = {
+    review: {
+      acknowledge: { status: "done" },
+      qa: { status: "skipped" },
+      verification: { status: "done" },
+      feedback: { status: "done" },
+    },
+  };
+
+  check("AI1 the strip is the review stages", [...REVIEW_STAGES], ["acknowledge", "qa", "verification", "feedback"]);
+  check("AI1 and says nothing about dismissing", REVIEW_STAGES.includes("dismiss"), false);
+  check("AI2 the map still ends on dismiss", [...MAP_NODES], [...REVIEW_STAGES, "dismiss"]);
+  check("AI2 which is where the control is", MAP_NODES.length, REVIEW_STAGES.length + 1);
+
+  // A finished pipeline leaves dismiss outstanding, which is the map's answer
+  // and not the strip's. No square reads current, and that is the state.
+  check("AI3 a settled record is current at dismiss", currentNode(settled), "dismiss");
+  check("AI3 so no square on the strip is current", REVIEW_STAGES.some((node) => node === currentNode(settled)), false);
+  check("AI3 and every square it draws reads settled", REVIEW_STAGES.map((node) => displayStatus(settled, node)), ["done", "skipped", "done", "done"]);
+
+  // The label a screen reader hears, built the way the strip builds it.
+  const label = REVIEW_STAGES.map((node) => nodeLabel(node, displayStatus(settled, node))).join(", ");
+  check("AI4 the label names four stops", label.split(", ").length, 4);
+  check("AI4 and never Dismiss", /dismiss/i.test(label), false);
 }
 
 console.log(failures === 0 ? "\nall pass" : `\n${failures} FAILED`);
