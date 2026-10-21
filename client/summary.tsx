@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { IntakeRecord } from "../shared/inbox";
 import { ConfirmButton } from "./confirm";
+import { Prose } from "./prose";
 import { age } from "../shared/format";
 import { BusyDots } from "./spinner";
 
@@ -137,7 +138,7 @@ export function SummaryCard({
    * behind a collapse is a reason not read. AC-Q4.
    */
   const failure = record.summaryError ? (
-    <Text style={styles.failure}>{record.summaryError}</Text>
+    <Prose style={styles.failure}>{record.summaryError}</Prose>
   ) : null;
 
   // Absent is a state, not an error: a record taken in before this existed, or
@@ -192,19 +193,19 @@ export function SummaryCard({
             {summary.changes.map((change) => (
               <View key={change} style={styles.changeRow}>
                 <Text style={styles.bullet}>·</Text>
-                <Text style={styles.change}>{change}</Text>
+                <Prose style={styles.change}>{change}</Prose>
               </View>
             ))}
           </View>
 
           <View style={styles.field}>
             <Text style={styles.label}>Risk</Text>
-            <Text style={styles.body}>{summary.risk}</Text>
+            <Prose style={styles.body}>{summary.risk}</Prose>
           </View>
 
           <View style={styles.field}>
             <Text style={styles.label}>Scope</Text>
-            <Text style={styles.body}>{summary.scope}</Text>
+            <Prose style={styles.body}>{summary.scope}</Prose>
           </View>
         </>
       ) : null}
