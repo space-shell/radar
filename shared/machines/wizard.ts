@@ -18,6 +18,30 @@ export type WizardEvent =
 /** The step the preview sits on, one past the verification step. */
 export const previewStepOf = (findings: number) => findings + 1;
 
+/** Which of the three screens the walk is on. The machine decides it. */
+export type WizardScreen = "finding" | "verification" | "preview";
+
+/**
+ * What the screen is called, in one place, because it is said twice.
+ *
+ * The heading said `Finding 1 of 3` and the footer said `Step 1 of 5` on the
+ * same screen. Neither was wrong: the heading counted findings and the footer
+ * counted the walk, which is the findings plus verification plus the preview.
+ * Two counters in two units on one screen read as a disagreement, so there is
+ * now one sentence and both ends print it. The screen is passed in rather than
+ * derived, so the footer cannot name a screen the body is not showing.
+ * AC-AH1.
+ */
+export function stepLabel(
+  screen: WizardScreen,
+  step: number,
+  findings: number,
+): string {
+  if (screen === "preview") return "Preview";
+  if (screen === "verification") return "Verification";
+  return `Finding ${step + 1} of ${findings}`;
+}
+
 /**
  * The wizard's journey, and nothing else it holds.
  *

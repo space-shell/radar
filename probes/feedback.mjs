@@ -5,7 +5,7 @@ import { anchorsOf, anchorFault, diffAnchors } from "../server/diff.ts";
 import { findingsPath } from "../server/findings.ts";
 import { checkDraftAnchors, readFeedbackState, storeDraft, submitReview } from "../server/feedback.ts";
 import { STATE_DIR, statePath, loadState } from "../server/state.ts";
-import { anchorKey, anchorLabel, emptyDraft } from "../shared/feedback.ts";
+import { anchorKey, anchorLabel, commentBody, emptyDraft } from "../shared/feedback.ts";
 
 let failures = 0;
 const check = (name, got, want) => {
@@ -119,10 +119,48 @@ await rm(STATE_DIR, { recursive: true, force: true });
 // E5. The hint on the approve row names the finding, not just its file. A path
 // with a colon in it is the case the old `.slice(2)` was reaching for.
 check("E5 anchorLabel reverses anchorKey", [
-  anchorLabel(anchorKey({ side: "RIGHT", line: 21, path: "apps/web/src/a.ts" })),
-  anchorLabel(anchorKey({ side: "LEFT", line: 4, path: "a:b/c.ts" })),
+  anchorLabel(anchorKey({ side: "RIGHT", line: 21, path: "apps/web/src/a.ts", body: "one" })),
+  anchorLabel(anchorKey({ side: "LEFT", line: 4, path: "a:b/c.ts", body: "two" })),
   anchorLabel("nonsense"),
 ], ["apps/web/src/a.ts:21", "a:b/c.ts:4", "nonsense"]);
+
+// AH. Two findings at one line. An agent writes as many as it has things to say
+// about a line, and `side:line:path` gave all of them one key: one include
+// switch, one replacement field and one React identity between them, so the
+// text could not be cleared and at most one of them could be posted. This is
+// the record that showed it, three findings on prometheus.ts line 4.
+const crowd = [
+  { path: "packages/observability/src/prometheus.ts", line: 4, side: "RIGHT", severity: "concern", body: "The Rust port hardcodes the old buckets." },
+  { path: "packages/observability/src/prometheus.ts", line: 4, side: "RIGHT", severity: "nit", body: "Nothing pins the new boundaries." },
+  { path: "packages/observability/src/prometheus.ts", line: 4, side: "RIGHT", severity: "nit", body: "The residual error moves rather than goes." },
+];
+const keys = crowd.map(anchorKey);
+check("AH2 three findings at one line are three keys", new Set(keys).size, 3);
+check("AH2 and they still carry the place they anchor to", keys.map(anchorLabel), [
+  "packages/observability/src/prometheus.ts:4",
+  "packages/observability/src/prometheus.ts:4",
+  "packages/observability/src/prometheus.ts:4",
+]);
+
+// AH3. The draft that follows from it. Switching the first on and writing under
+// it leaves the other two alone, which is the whole of what was broken.
+const crowded = {
+  ...emptyDraft(),
+  comments: { [keys[0]]: { include: true, text: "James' own wording." } },
+};
+check("AH3 the one switched on is the only one switched on", crowd.map((f) => crowded.comments[anchorKey(f)]?.include ?? false), [true, false, false]);
+check("AH3 and the wording is read back under it alone", crowd.map((f) => commentBody(f, crowded)), [
+  "James' own wording.",
+  "Nothing pins the new boundaries.",
+  "The residual error moves rather than goes.",
+]);
+
+// AH4. Stable, and independent of where the finding sits. The key is not the
+// index for exactly this reason: a QA re-run reorders the list.
+check("AH4 the same finding gives the same key twice", anchorKey(crowd[1]), keys[1]);
+check("AH4 reversing the list does not move a key", [...crowd].reverse().map(anchorKey), [...keys].reverse());
+check("AH4 rewording is a new finding", anchorKey({ ...crowd[1], body: "Reworded." }) !== keys[1], true);
+check("AH4 moving the line is too, as it always was", anchorKey({ ...crowd[1], line: 5 }) !== keys[1], true);
 
 console.log(failures === 0 ? "\nall clear" : `\n${failures} failed`);
 process.exit(failures === 0 ? 0 : 1);

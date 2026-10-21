@@ -7,25 +7,54 @@ import {
 } from "./findings";
 
 /**
- * A finding's identity, used to key the draft. Not its index: a QA re-run
- * reorders the list, and an include toggle must never land on a different
- * finding than the one James pressed.
+ * A 32 bit FNV-1a, base 36. Hand written because this module is parsed by
+ * Hermes on the phone and runs in Node on the daemon, and there is no
+ * synchronous digest both of them reach. It only ever separates findings within
+ * one file, which is a list of ten, so 32 bits is far more than the job needs.
+ */
+function digest(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index++) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+/**
+ * A finding's identity, used to key the draft.
+ *
+ * Not its index: a QA re-run reorders the list, and an include toggle must
+ * never land on a different finding than the one James pressed.
+ *
+ * Not its position either, which is what `side:line:path` amounted to. An agent
+ * writes as many findings at one line as it has things to say there, and three
+ * at `prometheus.ts:4` shared one draft comment, one include switch and one
+ * text field: the wording typed for the first was shown under all three, could
+ * not be cleared, and only one of the three could be posted. The body goes into
+ * the key through a digest, so two proposals at one place are two findings.
+ *
+ * Rewording a finding therefore changes its key and drops the replacement
+ * written for it. That is the right loss: James' wording answered words that
+ * are no longer on the screen. AC-AH2, AC-AH4.
  */
 export function anchorKey(finding: {
   path: string;
   line: number;
   side: string;
+  body: string;
 }): string {
-  return `${finding.side}:${finding.line}:${finding.path}`;
+  return `${finding.side}:${finding.line}:${digest(finding.body)}:${finding.path}`;
 }
 
 /**
- * An anchor key read back as a person writes it, `path:line`. The key puts the
- * side and the line first so it sorts usefully, which means the path is
- * everything after the second colon and a path may hold colons of its own.
+ * An anchor key read back as a person writes it, `path:line`. The side, the
+ * line and the digest come first so the key sorts usefully, which means the
+ * path is everything after the third colon and a path may hold colons of its
+ * own. AC-AH5.
  */
 export function anchorLabel(key: string): string {
-  const [, line, ...rest] = key.split(":");
+  const [, line, , ...rest] = key.split(":");
   const path = rest.join(":");
   return path.length > 0 ? `${path}:${line}` : key;
 }

@@ -800,6 +800,37 @@ findings file they share.
 - [x] **AC-AG8** Neither the row nor the detail footer names the repository or the word `created`. A state that is not `created` is still said, because `orphaned` is a fault and the age alone would hide it. Verified by probe.
 - [ ] **AC-AG9** Run QA and then Run verification, both pressed while the agent is mid-turn, leave two nodes reading `queued`, each with its own Cancel, and they start in press order. Awaiting the app.
 
+## AH. One anchor, one finding, and one word for where you are
+
+Two faults on the review screen, both visible on one record. He had the agent
+revise a findings document, opened the wizard, and the heading read
+`Finding 1 of 3` over a footer reading `Step 1 of 5`. Then whatever he typed
+into the replacement box stayed on screen as he walked to the next finding.
+
+The counters had not drifted apart. They were counting different things: the
+heading counted findings and the footer counted the walk, which is the findings
+plus verification plus the preview, so three findings always read 3 above and 5
+below. Both ends now call one function and say the same words, so there is no
+longer a pair of numbers to read against each other.
+
+The box was the worse of the two. `anchorKey` was `side:line:path`, and all
+three findings on that record were written at
+`packages/observability/src/prometheus.ts:4`. One key for three findings is one
+draft comment for three findings: the include switch, the replacement wording
+and the React identity of the field were shared, so the text could not be
+cleared and at most one of the three could ever be posted. The review that went
+out carried no inline comments at all and the first finding's text pasted into
+the body by hand. The key now carries a digest of the finding's own words, so
+two proposals at one line are two findings.
+
+- [x] **AC-AH1** The heading and the footer name the same screen in the same words: `Finding 1 of 3`, `Verification`, `Preview`. One `stepLabel` call supplies both, and it takes the screen the machine resolved rather than recomputing it, so the footer cannot name a screen the body is not showing. Verified by probe.
+- [x] **AC-AH2** Two findings at the same path, line and side have different anchor keys. The key carries a digest of the body, which is what makes two proposals at one place two findings rather than one. Verified by probe.
+- [x] **AC-AH3** Two findings at one place hold separate draft comments. Switching one on leaves the other off, and wording typed under one is not read back under the other. Verified by probe.
+- [x] **AC-AH4** The key is stable and position independent: the same finding gives the same key wherever it sits in the list, which is why it is not the index. A reworded finding is a new key, and loses the replacement written against the wording it no longer has. Verified by probe.
+- [x] **AC-AH5** `anchorLabel` still reads a key back as `path:line`, including a path carrying colons of its own, and still returns a key it cannot parse unchanged. Verified by probe.
+- [ ] **AC-AH6** Typing into the replacement box on one finding and pressing Next shows an empty box on the next. The field is uncontrolled by design, so what settles it is the remount, and that is a DOM fact no probe can reach. Awaiting the app.
+- [ ] **AC-AH7** The footer label slot holds the width of the widest label it can ever show, so moving between a finding and the preview does not slide the Next arrow sideways. Awaiting the app.
+
 ## Awaiting the app
 
 Every criterion below is built and typechecked. None can be ticked from here: each asserts
@@ -812,6 +843,7 @@ invocation command, so there is no route to them except the running app.
 | AC-AF27                        | One Run QA press made while a turn is open on the same agent                                                    |
 | AC-AF28                        | One Cancel press on the node that press left queued                                                             |
 | AC-AG9                         | Two presses made during one open turn, QA then verification                                                     |
+| AC-AH6, AC-AH7                 | One walk through a record whose findings share a line, typing in the box at each step                           |
 | AC-AE11                        | One `paseo agent kill` on an agent with a stage running                                                         |
 | AC-A2, AC-A3, AC-A4            | One Retry press on an `orphaned` or `failed` record                                                             |
 | AC-A7, AC-A9                   | One Dismiss press, then Restore                                                                                 |
