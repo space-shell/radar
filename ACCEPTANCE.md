@@ -88,7 +88,7 @@ shell out.
 - [x] **AC-C3** `skipped` is visually and structurally distinct from `pending`. A skipped stage never blocks a later one. Verified by construction: `skipped` carries its own glyph and a dashed border where `pending` is blank and solid, and `currentNode` steps over both `done` and `skipped`, so a skipped stage cannot hold up a later one.
 - [x] **AC-C4** Stage transitions are written to `seen.json` atomically, through the existing temp-and-rename path. Verified: every stage write goes through `updateState`, the only writer, which serialises load-mutate-save and renames a temp file into place.
 - [ ] **AC-C5** A stage left `running` when the daemon restarts is re-derived from the agent's real status on the next tick, never left stuck.
-- [x] **AC-C6** The row shows a compact five-segment stage strip readable without opening anything. It is read-only and never pressable, per decision D4. The full map and every control live on the detail screen, group J. Verified by construction: the row renders `StageStrip`, which contains no `Pressable` and no handler of any kind.
+- [x] **AC-C6** The row shows a compact stage strip, one segment per review stage, readable without opening anything. It is read-only and never pressable, per decision D4. The full map and every control live on the detail screen, group J. Verified by construction: the row renders `StageStrip`, which contains no `Pressable` and no handler of any kind.
 - [x] **AC-C7** No stage ever advances on its own. Every transition follows a press. Verified: the only background writer is `reconcileStages`, which can move a stage backwards to `pending` or sideways to `failed`, never forwards.
 
 ## D. Stage 1, Acknowledge
@@ -663,7 +663,7 @@ rather than a line that spans one.
 - [x] **AC-AD1** The summary card has no control in any state but one: no summary, and nothing running. Refresh beside a summary already written is gone, and so is Summarise beside a card still filling. The remaining control reads "Retry" when a reason is stored and "Summarise" when the agent simply wrote nothing.
 - [x] **AC-AD2** While a summary is on its way the card says so, in the place the summary will appear, with the same working indicator the rest of the plugin uses. It covers both ways one arrives: an intake turn nothing here started, and a press.
 - [x] **AC-AD3** Whether an agent is mid-turn is read off the `paseo ls --global --json` the liveness check already makes each tick, so knowing it costs no second call. `running` and `initializing` are working, matching the rule `inspectAgent` applies to one agent. The answer is at most one tick old, and the two things it gates settle on that same tick, so it cannot contradict what is on screen.
-- [x] **AC-AD4** The horizontal strip's connector touches both squares. A three point gap each side left the line floating between two stops it never reached. Spacing between the five is now the connector's own length and nothing else.
+- [x] **AC-AD4** The horizontal strip's connector touches both squares. A three point gap each side left the line floating between two stops it never reached. Spacing between the stops is now the connector's own length and nothing else.
 - [x] **AC-AD5** The vertical rail fills its node's height rather than taking a fixed length, so it ends exactly where the next square begins whatever the node above expanded to show. The node and the rail share one column beside the body, and the column stretches with it.
 - [x] **AC-AD6** The rail runs through the square's own centre line. It is centred in a gutter one node wide, rather than offset by half a node's padding, which left the one point line half a point to the right of centre.
 - [x] **AC-AD7** A record with a review stage running is not reported as awaiting a summary. One agent runs QA and verification when the settings give them no model of their own, so its status alone cannot tell one turn from another, and a spinner lit by a QA run on a record that never got a summary would never resolve. Verified by probe.
@@ -830,6 +830,26 @@ two proposals at one line are two findings.
 - [x] **AC-AH5** `anchorLabel` still reads a key back as `path:line`, including a path carrying colons of its own, and still returns a key it cannot parse unchanged. Verified by probe.
 - [ ] **AC-AH6** Typing into the replacement box on one finding and pressing Next shows an empty box on the next. The field is uncontrolled by design, so what settles it is the remount, and that is a DOM fact no probe can reach. Awaiting the app.
 - [ ] **AC-AH7** The footer label slot holds the width of the widest label it can ever show, so moving between a finding and the preview does not slide the Next arrow sideways. Awaiting the app.
+
+## AI. The strip draws the work, not the disposal
+
+The row strip drew five stops, the last one Dismiss. It could never be read as
+done. Dismissing a record takes it out of the active list in the same frame, so
+the square that would have filled is on a row that is no longer on screen.
+Under the Dismissed tab it fails the other way round, filled on every row,
+which says as little as never filling at all. Four stops now, one per review
+stage, which is the only part of the strip whose answer can change while it is
+being looked at.
+
+The detail map keeps all five. The node there is not only a reading: it carries
+the Dismiss and Restore control and the `dismissed <age>` line, and the screen
+stays open after the press, so it is the one place the fifth stop is both
+pressable and watchable.
+
+- [x] **AC-AI1** The row strip draws one square per review stage and no Dismiss square. `client/stages.tsx` maps `REVIEW_STAGES` and no longer names `MAP_NODES`. Verified by probe.
+- [x] **AC-AI2** The detail map is unchanged and still draws Dismiss, with its control and its timing line. `MAP_NODES` keeps its five members, so nothing that reads the map moved. Verified by probe.
+- [x] **AC-AI3** A record with every review stage done or skipped has `currentNode` of `dismiss`, which the strip does not draw, so no square reads current. That is the right answer rather than a gap: the pipeline is finished and nothing on the strip is outstanding. Verified by probe.
+- [x] **AC-AI4** The strip's accessibility label names four stops, in pipeline order, and never says Dismiss. Verified by probe.
 
 ## Awaiting the app
 

@@ -3,7 +3,7 @@ import { highlight } from "../shared/colour";
 import { Text, View } from "react-native";
 import { nodeAppearance, nodeLabel } from "../shared/appearance";
 import {
-  MAP_NODES,
+  REVIEW_STAGES,
   currentNode,
   displayStatus,
   type DisplayStatus,
@@ -104,8 +104,17 @@ interface StageStripProps {
 }
 
 /**
- * Five rounded squares, one per stage, readable without opening anything. AC-C6.
- * The full map with labels and controls is the detail view, group J.
+ * Four rounded squares, one per review stage, readable without opening anything.
+ * AC-C6. The full map with labels and controls is the detail view, group J.
+ *
+ * Dismiss is on the map and not here. A dismissed record leaves the active list
+ * in the same frame it is dismissed, so the fifth square could never be seen
+ * filled, and under the Dismissed tab it is filled on every row, which carries
+ * as little. The map keeps it because the node there is the control. AC-AI1.
+ *
+ * `currentNode` can answer `dismiss`, which is not drawn here. A settled record
+ * therefore marks no square current, which is what a finished pipeline is.
+ * AC-AI3.
  */
 export function StageStrip({ record, theme, size = 14 }: StageStripProps) {
   const current = currentNode(record);
@@ -113,16 +122,16 @@ export function StageStrip({ record, theme, size = 14 }: StageStripProps) {
   return (
     <View
       accessibilityRole="progressbar"
-      accessibilityLabel={MAP_NODES.map((node) =>
+      accessibilityLabel={REVIEW_STAGES.map((node) =>
         nodeLabel(node, displayStatus(record, node)),
       ).join(", ")}
       // No gap, in either row. A three point gap each side of every connector
       // left the line floating between two squares it never reached, which is
       // the one thing a metro line has to do. The connector's own length is
-      // what sets the five apart now. AC-AD4.
+      // what sets the stops apart now. AC-AD4.
       style={{ flexDirection: "row", alignItems: "center" }}
     >
-      {MAP_NODES.map((node, index) => (
+      {REVIEW_STAGES.map((node, index) => (
         <View key={node} style={{ flexDirection: "row", alignItems: "center" }}>
           {index > 0 ? <Connector theme={theme} length={6} /> : null}
           <StageNode
