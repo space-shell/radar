@@ -761,6 +761,45 @@ one rule that reads `running` to tell a QA turn from a summary turn.
 - [ ] **AC-AF27** Pressing Run QA while typing into the agent leaves the node reading `queued` with a Cancel control, and it starts on its own within ten seconds of the turn ending. Awaiting the app.
 - [ ] **AC-AF28** Cancel on a queued node returns it to `ready`, and no turn is ever sent. Awaiting the app.
 
+## AG. A stage is offered the moment it can be queued
+
+The queue shipped and the press was still refused, from the other side. James
+pressed Run QA while the agent was mid-turn, which queued correctly, and then
+found verification unpressable: not refused, not queued, inert. The report read
+as "the stages block while the agent is running", and the queue was the obvious
+suspect. It was not the queue.
+
+What withheld the control was the currency rule. `currentNode` is the first node
+that is not done or skipped, so a running QA holds that title and verification,
+being out of turn, offered nothing. The map had carried that rule since group J,
+where it was right: an untouched stage four stops down should not offer a
+control. A queued stage is what made it wrong, because now there is something
+worth doing to the stage after the one in flight.
+
+The server never had the rule. `runStage`'s claim refuses a stage that is itself
+running and asks nothing about its neighbours, and `setStageStatus` is the same.
+So the map was the stricter of the two, and the stricter half was the one with
+no reason behind it. The rule is now "every earlier stage has left pending",
+which being current implies, so nothing the old rule allowed is withdrawn.
+
+Three smaller things ride along. Feedback stops being skippable: it is where the
+review is written, and a pipeline that can be marked finished without a word
+written is a pipeline that lies. Dismiss already covers "this one needs
+nothing". The row and the detail footer stop naming the repo and the word
+`created`, which was four fifths of a line saying a record is a record. And QA
+and verification, now that both can be in flight at once, are held apart on the
+findings file they share.
+
+- [x] **AC-AG1** A pending stage whose earlier stages have all left pending offers Run and Skip, whether or not it is the node the map draws as current. Verified by probe.
+- [x] **AC-AG2** A pending stage with an earlier stage still pending offers nothing. That is the half of the old rule worth keeping: a stage the pipeline has not reached is inert rather than a control that would be refused. AC-J7. Verified by probe.
+- [x] **AC-AG3** Every row the currency rule allowed, the new rule still allows. Being current means every earlier stage is done or skipped, which is a stricter statement than having left pending, so the change only adds. Verified by probe.
+- [x] **AC-AG4** Pressing Run on QA and then on verification claims both. They share one lane under the default settings, so the second waits for the first and its turn follows in press order. Verified by probe.
+- [x] **AC-AG5** The status word follows the same rule as the controls. A node offering Run never reads `waiting`, and `statusWord` moved beside `nodeAppearance` so that claim is testable rather than asserted. Verified by probe.
+- [x] **AC-AG6** QA and verification never hold the findings file at once, even where the settings give each its own agent and the two genuinely run in parallel. They take a second lane keyed on the record, inside the agent lane and always in that order, so the nesting cannot deadlock. Without it, a verification merge landing between QA's clear and its agent's write is overwritten and the stage still reports the steps it lost. Verified by probe.
+- [x] **AC-AG7** Feedback cannot be skipped. The map offers no Skip on it and the server refuses `skipped` for it with `Feedback cannot be skipped`, which is the same rule read from both sides. AC-O2. Verified by probe.
+- [x] **AC-AG8** Neither the row nor the detail footer names the repository or the word `created`. A state that is not `created` is still said, because `orphaned` is a fault and the age alone would hide it. Verified by probe.
+- [ ] **AC-AG9** Run QA and then Run verification, both pressed while the agent is mid-turn, leave two nodes reading `queued`, each with its own Cancel, and they start in press order. Awaiting the app.
+
 ## Awaiting the app
 
 Every criterion below is built and typechecked. None can be ticked from here: each asserts
@@ -772,6 +811,7 @@ invocation command, so there is no route to them except the running app.
 | AC-AE10                        | One record taken in with the app open, watching the card fill before the next tick                              |
 | AC-AF27                        | One Run QA press made while a turn is open on the same agent                                                    |
 | AC-AF28                        | One Cancel press on the node that press left queued                                                             |
+| AC-AG9                         | Two presses made during one open turn, QA then verification                                                     |
 | AC-AE11                        | One `paseo agent kill` on an agent with a stage running                                                         |
 | AC-A2, AC-A3, AC-A4            | One Retry press on an `orphaned` or `failed` record                                                             |
 | AC-A7, AC-A9                   | One Dismiss press, then Restore                                                                                 |

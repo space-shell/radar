@@ -27,7 +27,7 @@ import {
   undoStageAction,
 } from "../shared/inbox";
 import { AGENT_STAGES, STAGE_LABELS, type ReviewStage } from "../shared/review";
-import { shortKey } from "./format";
+import { shortKey } from "../shared/format";
 
 const INBOX_QUERY = ["radar", "inbox"];
 /** Keyed so the mutation cache, not the observer, is the source of what is running. R5. */

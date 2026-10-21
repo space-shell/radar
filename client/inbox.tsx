@@ -11,7 +11,7 @@ import { ConfirmButton } from "./confirm";
 import { Detail } from "./detail";
 import { BusyDots, dotsWidth } from "./spinner";
 import { Steady } from "./steady";
-import { age, issueKey, recordMeta, since } from "./format";
+import { age, issueKey, recordMeta, since } from "../shared/format";
 import {
   useDismiss,
   useDismissingKeys,

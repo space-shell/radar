@@ -22,9 +22,14 @@ const seed = async (review) => {
 };
 const stageOf = async (name) => (await loadState()).intake[0].review?.[name];
 
-// O1. The constant itself.
+// O1. The constant itself. Two stages are absent, at the two ends of the
+// pipeline: acknowledge, which is where the pull request is read, and feedback,
+// which is where the review is written. AC-AG7.
+const UNSKIPPABLE = ["acknowledge", "feedback"];
 check("O1 acknowledge is not skippable", SKIPPABLE_STAGES.includes("acknowledge"), false);
-check("O1 every other stage is", REVIEW_STAGES.filter((s) => s !== "acknowledge").every((s) => SKIPPABLE_STAGES.includes(s)), true);
+check("O1 nor is feedback", SKIPPABLE_STAGES.includes("feedback"), false);
+check("O1 the work in the middle is", REVIEW_STAGES.filter((s) => !UNSKIPPABLE.includes(s)).every((s) => SKIPPABLE_STAGES.includes(s)), true);
+check("O1 and that is every stage accounted for", [...SKIPPABLE_STAGES].sort(), ["qa", "verification"]);
 
 // O2. The server refuses the skip, and changes nothing.
 await seed({ acknowledge: { status: "pending" }, qa: { status: "pending" }, verification: { status: "pending" }, feedback: { status: "pending" } });
@@ -35,11 +40,17 @@ check("O2 the stage is untouched", await stageOf("acknowledge"), { status: "pend
 const week = await readFile(new URL("file://" + STATE_DIR + "/ledger").pathname, "utf8").catch(() => null);
 check("O3 no ledger directory was created by the refusal", week, null);
 
-// O4. The other three still skip.
-for (const stage of ["qa", "verification", "feedback"]) {
+// O4. The two in the middle still skip.
+for (const stage of ["qa", "verification"]) {
   check(`O4 ${stage} skips`, (await setStageStatus("o/r#1", stage, "skipped")).ok, true);
   check(`O4 ${stage} landed skipped`, (await stageOf(stage)).status, "skipped");
 }
+
+// O4b. Feedback refuses in the same words acknowledge does, and leaves the
+// stage alone. A record marked finished with nothing written is a map that lies
+// about what was done, and "this one needs nothing from me" is Dismiss. AC-AG7.
+check("O4b skipping feedback is refused", await setStageStatus("o/r#1", "feedback", "skipped"), { ok: false, error: "Feedback cannot be skipped" });
+check("O4b the stage is untouched", await stageOf("feedback"), { status: "pending" });
 
 // O5. Acknowledge can still be reopened: the refusal is about skipped, not the RPC.
 await seed({ acknowledge: { status: "done", endedAt: "x" }, qa: { status: "pending" }, verification: { status: "pending" }, feedback: { status: "pending" } });

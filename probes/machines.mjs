@@ -7,7 +7,8 @@ import {
 import { viewMachine } from "../shared/machines/view.ts";
 import { previewStepOf, wizardMachine } from "../shared/machines/wizard.ts";
 import { stageEvents } from "../shared/machines/stage.ts";
-import { nodeAppearance } from "../shared/appearance.ts";
+import { nodeAppearance, statusWord } from "../shared/appearance.ts";
+import { recordMeta } from "../shared/format.ts";
 import {
   currentNode,
   REVIEW_STAGES,
@@ -15,6 +16,7 @@ import {
   SKIPPABLE_STAGES,
   UNDOABLE_STAGES,
   laterStagesStarted,
+  stageBlocked,
 } from "../shared/review.ts";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { STATE_DIR, statePath } from "../server/state.ts";
@@ -592,10 +594,15 @@ function wizard() {
 /**
  * The cascade the stage machine replaced, transcribed from the detail view as it
  * stood. It is the oracle: the machine has to agree with it on every combination
- * of stage, status, currency and whether a later stage has moved, or the
- * migration changed behaviour without saying so.
+ * of stage, status, reach and whether a later stage has moved, or the migration
+ * changed behaviour without saying so.
+ *
+ * One line of it has changed since: the cascade asked whether the stage was the
+ * current node, and the rule is now whether every earlier stage has left
+ * pending. Being current implies that, so the oracle is the same table read
+ * through a wider condition, and AG3 is the check that nothing was withdrawn.
  */
-function offeredByTheOldCascade(stage, status, isCurrent, laterMoved) {
+function offeredByTheOldCascade(stage, status, blocked, laterMoved) {
   if (status === "running") return [];
   const perform = RUNNABLE_STAGES.includes(stage) ? ["RUN"] : [];
   const skip = SKIPPABLE_STAGES.includes(stage) ? ["SKIP"] : [];
@@ -603,60 +610,81 @@ function offeredByTheOldCascade(stage, status, isCurrent, laterMoved) {
   if (status === "done") return undo.length ? undo : ["REOPEN"];
   if (status === "skipped") return [...perform, "REOPEN"];
   if (status === "failed") return [...perform, "REOPEN", ...skip];
-  if (!isCurrent) return [];
+  if (blocked) return [];
   return [...perform, ...skip];
 }
 
-/** A record whose named stage carries `status`, and whose next stage has or has not moved. */
-function recordWith(stage, status, laterMoved) {
+/**
+ * A record whose named stage carries `status`, whose next stage has or has not
+ * moved, and whose earlier stages are in one of the three shapes that decide
+ * whether this one is reachable.
+ *
+ * `earlier` replaces the old `isCurrent` argument. Currency used to be passed
+ * in beside the record, which let the grid ask for combinations the record did
+ * not hold; it is now read off the fixture, so every row the grid asserts is a
+ * record that could exist.
+ */
+function recordWith(stage, status, laterMoved, earlier = "settled") {
   const review = {};
+  const before = REVIEW_STAGES.slice(0, REVIEW_STAGES.indexOf(stage));
   for (const name of REVIEW_STAGES) review[name] = { status: "pending" };
+  for (const name of before) {
+    review[name] =
+      earlier === "settled"
+        ? { status: "done" }
+        : earlier === "running"
+          ? { status: "running", startedAt: "2026-10-21T08:00:00Z" }
+          : { status: "pending" };
+  }
   review[stage] = { status };
   const after = REVIEW_STAGES[REVIEW_STAGES.indexOf(stage) + 1];
   if (laterMoved && after) review[after] = { status: "done" };
   return { review };
 }
 
-// S1. Every row of the table, for every stage, in both currencies, with and
-// without a later stage having moved. The whole grid, nothing skipped.
+// S1. Every row of the table, for every stage, against each of the three shapes
+// its predecessors can be in, with and without a later stage having moved. The
+// whole grid, nothing skipped.
 //
 // An earlier version skipped the quarter where a later stage has moved and this
-// stage is still current, calling it unreachable. It is reachable: `currentNode`
-// is the first stage that is not done or skipped, so Reopen on a done
-// acknowledge while QA is already done leaves acknowledge pending, current, and
-// behind a stage that moved. Nine rows went untested on a claim that was wrong.
+// stage is still reachable, calling it unreachable. It is reachable: Reopen on a
+// done acknowledge while QA is already done leaves acknowledge pending, first in
+// the map and behind a stage that moved. Nine rows went untested on a claim that
+// was wrong.
 //
-// `laterMoved` is read back off the record rather than taken from the loop,
-// because feedback has no later stage: asking for one changes nothing, so its
-// two halves are one fixture. Reading it back is what keeps the oracle answering
-// the question the machine was actually asked. 80 fixtures, 70 distinct rows.
+// Both derived inputs are read back off the record rather than taken from the
+// loop. `laterMoved` because feedback has no later stage, so its two halves are
+// one fixture; `blocked` because acknowledge has no earlier stage, so its three
+// thirds are one fixture. Reading them back is what keeps the oracle answering
+// the question the machine was actually asked. 120 fixtures, 60 distinct rows.
 {
   const disagreed = [];
   const rows = new Set();
   for (const stage of REVIEW_STAGES) {
     for (const status of ["pending", "running", "done", "skipped", "failed"]) {
-      for (const isCurrent of [true, false]) {
+      for (const earlier of ["settled", "pending", "running"]) {
         for (const asked of [true, false]) {
-          const record = recordWith(stage, status, asked);
+          const record = recordWith(stage, status, asked, earlier);
           const laterMoved = laterStagesStarted(record, stage);
-          rows.add(`${stage}/${status}/${isCurrent}/${laterMoved}`);
-          const got = stageEvents(record, stage, isCurrent);
+          const blocked = stageBlocked(record, stage);
+          rows.add(`${stage}/${status}/${blocked}/${laterMoved}`);
+          const got = stageEvents(record, stage);
           const want = offeredByTheOldCascade(
             stage,
             status,
-            isCurrent,
+            blocked,
             laterMoved,
           );
           if (JSON.stringify(got) === JSON.stringify(want)) continue;
           disagreed.push(
-            `${stage}/${status}/current=${isCurrent}/later=${laterMoved}: got ${JSON.stringify(got)} want ${JSON.stringify(want)}`,
+            `${stage}/${status}/blocked=${blocked}/later=${laterMoved}: got ${JSON.stringify(got)} want ${JSON.stringify(want)}`,
           );
         }
       }
     }
   }
   check("S1 the machine agrees with the cascade it replaced", disagreed, []);
-  check("S1 across the whole grid", rows.size, 70);
+  check("S1 across the whole grid", rows.size, 60);
 }
 
 // S1b. The row the old skip called unreachable, reached the way a person reaches
@@ -677,50 +705,48 @@ function recordWith(stage, status, laterMoved) {
   );
   check(
     "S1b and it offers exactly what the cascade offered",
-    stageEvents(record, "acknowledge", true),
-    offeredByTheOldCascade("acknowledge", "pending", true, true),
+    stageEvents(record, "acknowledge"),
+    offeredByTheOldCascade("acknowledge", "pending", false, true),
   );
 }
 
 // S2. The rows that matter most, named one at a time so a failure says which.
 {
-  const qa = (status, isCurrent, laterMoved = false) =>
-    stageEvents(recordWith("qa", status, laterMoved), "qa", isCurrent);
-  check("S2 a running stage offers nothing", qa("running", true), []);
+  const qa = (status, earlier, laterMoved = false) =>
+    stageEvents(recordWith("qa", status, laterMoved, earlier), "qa");
+  check("S2 a running stage offers nothing", qa("running", "settled"), []);
   check(
-    "S2 a pending stage out of turn offers nothing",
-    qa("pending", false),
+    "S2 a pending stage behind one still pending offers nothing",
+    qa("pending", "pending"),
     [],
   );
-  check("S2 the current pending stage runs or skips", qa("pending", true), [
+  check("S2 a reached pending stage runs or skips", qa("pending", "settled"), [
     "RUN",
     "SKIP",
   ]);
-  check("S2 a skipped stage runs or reopens", qa("skipped", false), [
+  check("S2 a skipped stage runs or reopens", qa("skipped", "settled"), [
     "RUN",
     "REOPEN",
   ]);
-  check("S2 a failed stage runs, reopens or skips", qa("failed", false), [
+  check("S2 a failed stage runs, reopens or skips", qa("failed", "settled"), [
     "RUN",
     "REOPEN",
     "SKIP",
   ]);
-  check("S2 a done stage with no undo reopens", qa("done", false), ["REOPEN"]);
+  check("S2 a done stage with no undo reopens", qa("done", "settled"), [
+    "REOPEN",
+  ]);
 }
 
 // S3. Acknowledge is the stage the rules bend around. It never skips, and it is
 // the only one that undoes.
 {
-  const ack = (status, isCurrent, laterMoved = false) =>
-    stageEvents(
-      recordWith("acknowledge", status, laterMoved),
-      "acknowledge",
-      isCurrent,
-    );
-  check("S3 acknowledge never offers skip", ack("pending", true), ["RUN"]);
-  check("S3 nor when it failed", ack("failed", false), ["RUN", "REOPEN"]);
-  check("S3 done acknowledge undoes", ack("done", false), ["UNDO"]);
-  check("S3 and reopens once a later stage moved", ack("done", false, true), [
+  const ack = (status, laterMoved = false) =>
+    stageEvents(recordWith("acknowledge", status, laterMoved), "acknowledge");
+  check("S3 acknowledge never offers skip", ack("pending"), ["RUN"]);
+  check("S3 nor when it failed", ack("failed"), ["RUN", "REOPEN"]);
+  check("S3 done acknowledge undoes", ack("done"), ["UNDO"]);
+  check("S3 and reopens once a later stage moved", ack("done", true), [
     "REOPEN",
   ]);
 }
@@ -734,7 +760,6 @@ function recordWith(stage, status, laterMoved) {
       const offered = stageEvents(
         recordWith(stage, "done", laterMoved),
         stage,
-        false,
       ).filter((type) => type === "UNDO" || type === "REOPEN");
       if (offered.length !== 1)
         wrong.push(`${stage}/later=${laterMoved}: ${JSON.stringify(offered)}`);
@@ -743,12 +768,20 @@ function recordWith(stage, status, laterMoved) {
   check("S4 a done stage offers exactly one of undo and reopen", wrong, []);
 }
 
-// S5. Feedback has no action wired behind it, so Run is never offered for it.
+// S5. Feedback has no action wired behind it, so Run is never offered for it,
+// and since group AG it cannot be skipped either. A reached, pending feedback
+// node therefore offers nothing at all: it is finished by writing the review in
+// the wizard, or the record is put down with Dismiss. AC-AG7.
 {
   check(
-    "S5 feedback is not runnable",
-    stageEvents(recordWith("feedback", "pending", false), "feedback", true),
-    ["SKIP"],
+    "S5 feedback is neither runnable nor skippable",
+    stageEvents(recordWith("feedback", "pending", false), "feedback"),
+    [],
+  );
+  check(
+    "S5 nor skippable once it has failed, which is the other skip row",
+    stageEvents(recordWith("feedback", "failed", false), "feedback"),
+    ["REOPEN"],
   );
 }
 
@@ -767,7 +800,7 @@ function recordWith(stage, status, laterMoved) {
 
   check(
     "AF23 a queued stage offers Cancel and nothing else",
-    stageEvents(queued("qa"), "qa", true),
+    stageEvents(queued("qa"), "qa"),
     ["CANCEL"],
   );
   check(
@@ -775,21 +808,20 @@ function recordWith(stage, status, laterMoved) {
     stageEvents(
       { review: { qa: { status: "running", startedAt: "2026-10-20T08:00:00Z" } } },
       "qa",
-      true,
     ),
     [],
   );
   check(
     "AF23 a running stage with neither timestamp is not queued either",
-    stageEvents({ review: { qa: { status: "running" } } }, "qa", true),
+    stageEvents({ review: { qa: { status: "running" } } }, "qa"),
     [],
   );
 
-  // AF24. Cancel carries no currency guard, on purpose. Undoing acknowledge
-  // while QA is queued makes acknowledge current again, and a currency guard
-  // would leave that press holding a lane with no way to let go of it.
+  // AF24. Cancel carries no reach guard, on purpose. Undoing acknowledge while
+  // QA is queued leaves QA behind a pending stage, and a reach guard would leave
+  // that press holding a lane with no way to let go of it.
   check(
-    "AF24 Cancel is offered on a queued stage that is not current",
+    "AF24 Cancel is offered on a queued stage that is blocked",
     stageEvents(
       {
         review: {
@@ -800,7 +832,6 @@ function recordWith(stage, status, laterMoved) {
         },
       },
       "qa",
-      false,
     ),
     ["CANCEL"],
   );
@@ -808,7 +839,7 @@ function recordWith(stage, status, laterMoved) {
   // stage that has moved, so acknowledge cannot be undone out from under it.
   check(
     "AF24 and a queued later stage withdraws Undo from the one before it",
-    stageEvents(queued("qa"), "acknowledge", false),
+    stageEvents(queued("qa"), "acknowledge"),
     ["REOPEN"],
   );
 }
@@ -864,6 +895,207 @@ function recordWith(stage, status, laterMoved) {
   );
 }
 
+// AG1. The row the queue created, and the reason James could not line a press
+// up behind the one already running. QA is mid-turn, so it holds the title of
+// current node for as long as it runs; verification sat behind it offering
+// nothing, which is exactly the press worth taking.
+{
+  const behind = (qa) => ({
+    review: {
+      acknowledge: { status: "done" },
+      qa,
+      verification: { status: "pending" },
+      feedback: { status: "pending" },
+    },
+  });
+  const running = behind({ status: "running", startedAt: "2026-10-21T08:00:00Z" });
+  const queued = behind({ status: "running", queuedAt: "2026-10-21T08:00:00Z" });
+
+  check(
+    "AG1 QA still holds the title of current node while it runs",
+    [currentNode(running), currentNode(queued)],
+    ["qa", "qa"],
+  );
+  check(
+    "AG1 and verification, which is not current, is offered anyway",
+    [
+      stageEvents(running, "verification"),
+      stageEvents(queued, "verification"),
+    ],
+    [
+      ["RUN", "SKIP"],
+      ["RUN", "SKIP"],
+    ],
+  );
+  check(
+    "AG1 because every stage before it has left pending",
+    [stageBlocked(running, "verification"), stageBlocked(queued, "verification")],
+    [false, false],
+  );
+  // A skipped or failed QA counts as having left pending just as a done one
+  // does, which is what makes "left pending" the rule rather than "settled".
+  check(
+    "AG1 a skipped or failed earlier stage reaches it the same way",
+    [
+      stageEvents(behind({ status: "skipped" }), "verification"),
+      stageEvents(behind({ status: "failed" }), "verification"),
+    ],
+    [
+      ["RUN", "SKIP"],
+      ["RUN", "SKIP"],
+    ],
+  );
+}
+
+// AG2. The rule did not become "everything is always offered". A stage with an
+// earlier one still untouched is still inert, which is AC-J7 unchanged.
+{
+  const untouched = {
+    review: {
+      acknowledge: { status: "pending" },
+      qa: { status: "pending" },
+      verification: { status: "pending" },
+      feedback: { status: "pending" },
+    },
+  };
+  check(
+    "AG2 a stage behind an untouched one offers nothing",
+    [
+      stageEvents(untouched, "qa"),
+      stageEvents(untouched, "verification"),
+      stageEvents(untouched, "feedback"),
+    ],
+    [[], [], []],
+  );
+  check(
+    "AG2 while the first stage of all is offered",
+    stageEvents(untouched, "acknowledge"),
+    ["RUN"],
+  );
+  // One pending stage anywhere earlier is enough, however far back it is.
+  check(
+    "AG2 and a gap left behind still blocks, not just the stage just before",
+    stageEvents(
+      {
+        review: {
+          acknowledge: { status: "pending" },
+          qa: { status: "done" },
+          verification: { status: "pending" },
+          feedback: { status: "pending" },
+        },
+      },
+      "verification",
+    ),
+    [],
+  );
+}
+
+// AG3. Nothing was withdrawn. Being the current node means every earlier stage
+// is done or skipped, which is a stricter claim than having left pending, so
+// the new rule can only ever offer more. Checked as a containment over the
+// whole grid rather than asserted in prose.
+{
+  const lost = [];
+  for (const stage of REVIEW_STAGES) {
+    for (const status of ["pending", "running", "done", "skipped", "failed"]) {
+      for (const earlier of ["settled", "pending", "running"]) {
+        for (const asked of [true, false]) {
+          const record = recordWith(stage, status, asked, earlier);
+          const wasCurrent = currentNode(record) === stage;
+          const before = offeredByTheOldCascade(
+            stage,
+            status,
+            !wasCurrent,
+            laterStagesStarted(record, stage),
+          );
+          const now = stageEvents(record, stage);
+          const missing = before.filter((type) => !now.includes(type));
+          if (missing.length > 0) {
+            lost.push(
+              `${stage}/${status}/earlier=${earlier}/later=${asked}: lost ${JSON.stringify(missing)}`,
+            );
+          }
+        }
+      }
+    }
+  }
+  check("AG3 the currency rule offered nothing the new rule does not", lost, []);
+}
+
+// AG5. The word under the node reads off the same rule the controls do. Split
+// them and the first thing produced is a node reading "waiting" with a Run
+// button beneath it, which is the screen telling James two things at once.
+{
+  check(
+    "AG5 a reached pending node reads ready, an unreached one waiting",
+    [statusWord("pending", true), statusWord("pending", false)],
+    ["ready", "waiting"],
+  );
+  check(
+    "AG5 and every other status is said verbatim",
+    ["running", "queued", "done", "skipped", "failed"].map((status) => [
+      statusWord(status, true),
+      statusWord(status, false),
+    ]),
+    [
+      ["running", "running"],
+      ["queued", "queued"],
+      ["done", "done"],
+      ["skipped", "skipped"],
+      ["failed", "failed"],
+    ],
+  );
+
+  const contradicted = [];
+  for (const stage of REVIEW_STAGES) {
+    for (const earlier of ["settled", "pending", "running"]) {
+      const record = recordWith(stage, "pending", false, earlier);
+      const reached = !stageBlocked(record, stage);
+      const offered = stageEvents(record, stage);
+      const word = statusWord("pending", reached);
+      if (offered.length > 0 && word !== "ready") {
+        contradicted.push(`${stage}/${earlier}: ${word} under ${offered}`);
+      }
+    }
+  }
+  check("AG5 so no pending node reads waiting under a control", contradicted, []);
+}
+
+// AG8. The one line summary under a record. It said `created · Quartr-App/web ·
+// 3h ago` on every row of a one repository inbox, spending two thirds of its
+// width saying a record is a record.
+{
+  const record = {
+    key: "o/r#1",
+    repo: "o/r",
+    number: 1,
+    title: "t",
+    firstSeen: new Date(Date.now() - 3 * 3_600_000).toISOString(),
+    state: "created",
+  };
+  check("AG8 an ordinary record says its age and nothing else", recordMeta(record), "3h ago");
+  check(
+    "AG8 naming neither the repository nor the word created",
+    [recordMeta(record).includes("o/r"), recordMeta(record).includes("created")],
+    [false, false],
+  );
+  check(
+    "AG8 while a state that is a fault is still said",
+    ["orphaned", "failed", "dry-run"].map((state) =>
+      recordMeta({ ...record, state }),
+    ),
+    ["orphaned · 3h ago", "failed · 3h ago", "dry-run · 3h ago"],
+  );
+  check(
+    "AG8 and a dismissal keeps its own age",
+    recordMeta({
+      ...record,
+      dismissedAt: new Date(Date.now() - 3_600_000).toISOString(),
+    }),
+    "3h ago · dismissed 1h ago",
+  );
+}
+
 /**
  * The machine decides what the map offers. The server decides what it allows,
  * and it has refused the same things since before there was a machine. The two
@@ -903,12 +1135,11 @@ const seedRecord = async (record) => {
   const refused = [];
   for (const stage of REVIEW_STAGES) {
     for (const status of ["pending", "running", "done", "skipped", "failed"]) {
-      for (const isCurrent of [true, false]) {
+      for (const earlier of ["settled", "pending", "running"]) {
         for (const laterMoved of [true, false]) {
-          if (laterMoved && isCurrent) continue;
-          const record = recordWith(stage, status, laterMoved);
-          const offered = stageEvents(record, stage, isCurrent);
-          const where = `${stage}/${status}/current=${isCurrent}/later=${laterMoved}`;
+          const record = recordWith(stage, status, laterMoved, earlier);
+          const offered = stageEvents(record, stage);
+          const where = `${stage}/${status}/earlier=${earlier}/later=${laterMoved}`;
 
           for (const event of offered) {
             if (event === "RUN") {
@@ -954,7 +1185,7 @@ const seedRecord = async (record) => {
   );
   check(
     "R2 and the map offers nothing there",
-    stageEvents(recordWith("qa", "running", false), "qa", true),
+    stageEvents(recordWith("qa", "running", false), "qa"),
     [],
   );
 }
@@ -969,12 +1200,35 @@ const seedRecord = async (record) => {
   );
   check(
     "R3 and the map never offers it",
-    stageEvents(
-      recordWith("acknowledge", "pending", false),
-      "acknowledge",
-      true,
-    ).includes("SKIP"),
+    stageEvents(recordWith("acknowledge", "pending", false), "acknowledge").includes(
+      "SKIP",
+    ),
     false,
+  );
+}
+
+// R4. Feedback, the stage group AG took Skip away from. The same pair of checks
+// as R3, because the two absences from SKIPPABLE_STAGES have to hold on both
+// sides or a control appears that the server will refuse. AC-AG7.
+{
+  await seedRecord(recordWith("feedback", "pending", false));
+  check(
+    "R4 the server refuses to skip feedback",
+    await setStageStatus("o/r#1", "feedback", "skipped"),
+    { ok: false, error: "Feedback cannot be skipped" },
+  );
+  check(
+    "R4 and the map never offers it, reached or not",
+    [
+      stageEvents(recordWith("feedback", "pending", false, "settled"), "feedback"),
+      stageEvents(recordWith("feedback", "failed", false, "settled"), "feedback"),
+    ].flat().includes("SKIP"),
+    false,
+  );
+  check(
+    "R4 while the two stages that may be skipped still are",
+    SKIPPABLE_STAGES.slice(),
+    ["qa", "verification"],
   );
 }
 

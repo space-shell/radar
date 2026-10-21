@@ -1,6 +1,11 @@
 import { pullRequestUrl, type IntakeRecord } from "../shared/inbox";
 import { reviewOf } from "../shared/review";
-import { findingsPath, readFindings, writeFindings } from "./findings";
+import {
+  findingsPath,
+  inFindingsLane,
+  readFindings,
+  writeFindings,
+} from "./findings";
 import { clearArtifact, prepareArtifact } from "./artifact";
 import { keyUrl, note as ledger } from "./ledger";
 import { log } from "./log";
@@ -42,31 +47,35 @@ export function runQa(key: string, paseo: Paseo): Promise<StageResult> {
   return runStage(
     key,
     "qa",
-    async (record) => {
-      const output = findingsPath(record.repo, record.number);
-      await prepareArtifact(output);
+    (record) =>
+      // Held across the whole body rather than around the writes, because the
+      // write that must not interleave is the agent's own. AC-AG6.
+      inFindingsLane(record.key, async () => {
+        const output = findingsPath(record.repo, record.number);
+        await prepareArtifact(output);
 
-      // A re-run replaces the code findings. The verification list is not QA's to
-      // discard, so it is carried across rather than lost with the old file. AC-F5.
-      const previous = await readFindings(output).catch(() => null);
-      await clearArtifact(output);
+        // A re-run replaces the code findings. The verification list is not QA's
+        // to discard, so it is carried across rather than lost with the old file.
+        // AC-F5.
+        const previous = await readFindings(output).catch(() => null);
+        await clearArtifact(output);
 
-      const brief = await briefPath("qa");
-      await askAgent(
-        paseo,
-        record,
-        "qa",
-        prompt(record, brief, output, await setupCommand()),
-      );
+        const brief = await briefPath("qa");
+        await askAgent(
+          paseo,
+          record,
+          "qa",
+          prompt(record, brief, output, await setupCommand()),
+        );
 
-      const file = await readFindings(output);
-      const carried = previous?.verification ?? [];
-      if (carried.length > 0 && file.verification.length === 0) {
-        await writeFindings(output, { ...file, verification: carried });
-      }
+        const file = await readFindings(output);
+        const carried = previous?.verification ?? [];
+        if (carried.length > 0 && file.verification.length === 0) {
+          await writeFindings(output, { ...file, verification: carried });
+        }
 
-      return countNote(file.findings.length);
-    },
+        return countNote(file.findings.length);
+      }),
     { background: true, gate: (record) => gateFor(paseo, record, "qa") },
   );
 }

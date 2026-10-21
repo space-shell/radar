@@ -37,9 +37,10 @@ const { __setSettingsForTest } = await import("../server/settings.ts");
 const { radarSettings } = await import("../shared/settings.ts");
 const { reconcileStages, setStageStatus } = await import("../server/stages.ts");
 const { adoptFindings, runQa } = await import("../server/qa.ts");
-const { findingsPath } = await import("../server/findings.ts");
 const { ledgerPath } = await import("../server/ledger.ts");
 const { lanesBlocked, stopLanes } = await import("../server/queue.ts");
+const { findingsPath, inFindingsLane, verificationPath } = await import("../server/findings.ts");
+const { runVerification } = await import("../server/verification.ts");
 
 let failures = 0;
 const check = (name, got, want) => {
@@ -93,6 +94,15 @@ const findings = async (count, generatedAt = new Date().toISOString()) => {
 };
 const fileOnDisk = async () => JSON.parse(await readFile(OUT, "utf8").catch(() => "null"));
 
+/** What the verification agent writes, to its own path. One passing step. */
+const verificationFile = async (path) => {
+  await mkdir(dirname(path), { recursive: true });
+  await writeAtomic(path, JSON.stringify({
+    version: 1, key: KEY, generatedAt: new Date().toISOString(),
+    verification: [{ step: "open the preview", outcome: "passed", detail: "" }],
+  }));
+};
+
 // The daemon, as far as the plugin can tell. `world` is mutable, so a turn can
 // open and close under a press that is already waiting.
 const world = new Map();
@@ -116,7 +126,11 @@ const paseo = {
       run: async (prompt) => {
         sent.push({ id, prompt });
         if (hold) await hold;
-        await findings(writes);
+        // Each stage is told where to write. Answering the prompt rather than a
+        // fixed path is what lets QA and verification both be driven here.
+        const to = /Write the result file to: (.+)/.exec(prompt)?.[1] ?? "";
+        if (to.endsWith(".verification.json")) await verificationFile(to);
+        else await findings(writes);
         return { status: "idle", lastMessage: "ok" };
       },
     }),
@@ -287,6 +301,106 @@ await findings(4, "2026-10-20T08:06:00Z");
 await adoptFindings();
 check("AF22 one written after the turn began is", (await qa()).status, "done");
 check("AF22 with its count", (await qa()).note, "4 findings");
+
+// ---- AG4. Two presses during one open turn. --------------------------------
+// The report this group answers: QA and verification looked blocked while the
+// agent worked, so a second press could not be lined up behind the first. Both
+// are claimed, and the second waits in the same lane rather than being refused.
+await writeFile(join(FIX, "pr-1.json"), JSON.stringify({ state: "OPEN", body: "no preview here" }));
+await seed();
+agent("a1", { activeTurn: false });
+sent = [];
+hold = new Promise((r) => { release = r; });
+const stageOf = async (name) => (await loadState()).intake[0].review?.[name];
+
+check("AG4 the first press is accepted", await runQa(KEY, paseo), { ok: true });
+check("AG4 and its turn goes out at once", await until(async () => sent.length === 1, 2000), true);
+check("AG4 the second press is accepted too", await runVerification(KEY, paseo), { ok: true });
+await sleep(300);
+check("AG4 both stages are claimed", [(await stageOf("qa")).status, (await stageOf("verification")).status], ["running", "running"]);
+check("AG4 the second is queued, the first is away", [(await stageOf("verification")).queuedAt != null, (await stageOf("qa")).queuedAt], [true, undefined]);
+check("AG4 waiting in the first's lane", lanesBlocked(), 1);
+check("AG4 and no second turn was sent", sent.length, 1);
+
+release();
+check("AG4 the first settles", await until(async () => (await stageOf("qa")).status === "done", 6000), true);
+check("AG4 then the second's turn goes out, in press order", await until(async () => sent.length === 2, 6000), true);
+check("AG4 the second settles on its own", await until(async () => (await stageOf("verification")).status === "done", 6000), true);
+check("AG4 with what it found", (await stageOf("verification")).note, "1 step, all passed");
+check("AG4 no lane is left blocked", lanesBlocked(), 0);
+
+// ---- AG6. The findings file is held by one stage at a time. -----------------
+// The lane alone first. Nothing of paseo is involved: it is a mutex keyed by
+// record, and the point is that a second body on the same record does not
+// begin until the first has finished.
+{
+  const order = [];
+  const first = inFindingsLane(KEY, async () => {
+    order.push("a in");
+    await sleep(200);
+    order.push("a out");
+    return "a";
+  });
+  const second = inFindingsLane(KEY, async () => {
+    order.push("b in");
+    return "b";
+  });
+  const elsewhere = inFindingsLane("o/r#2", async () => {
+    order.push("c in");
+    return "c";
+  });
+  check("AG6 both bodies on one record resolve", await Promise.all([first, second, elsewhere]), ["a", "b", "c"]);
+  check("AG6 and the second did not begin until the first was done", order, ["a in", "c in", "a out", "b in"]);
+  check("AG6 a different record is a different lane", order.indexOf("c in") < order.indexOf("a out"), true);
+}
+
+// With a model of their own per task, the agent lane no longer holds the two
+// apart: they are two agents and genuinely run at the same time. The findings
+// lane is what keeps verification's merge off a file QA's agent is rewriting.
+// The consequence is observable as turn overlap, so that is what is checked.
+__setSettingsForTest(radarSettings.schema.parse({
+  dryRun: false,
+  paseoPath: join(BIN, "fake-paseo"),
+  ghPath: join(BIN, "fake-gh"),
+  gitPath: "git",
+  tasks: {
+    qa: { agent: { provider: "codex", model: "gpt-6.1-sol", thinking: "high", mode: "plan" } },
+    verification: { agent: { provider: "codex", model: "gpt-6.1-pro", thinking: "high", mode: "plan" } },
+  },
+}));
+await writeAtomic(statePath, JSON.stringify({
+  seenPullRequests: [KEY],
+  intake: [{
+    key: KEY, repo: "o/r", number: 1, title: "t", firstSeen: "2026-10-20T07:00:00Z",
+    state: "created", agentId: "a1", workspaceId: "ws-1",
+    taskAgents: { qa: "a-qa", verification: "a-ver" },
+    review: { acknowledge: { status: "done" }, qa: { status: "pending" }, verification: { status: "pending" }, feedback: { status: "pending" } },
+  }],
+}, null, 2));
+agent("a-qa", { activeTurn: false });
+agent("a-ver", { activeTurn: false });
+sent = [];
+hold = new Promise((r) => { release = r; });
+
+await runQa(KEY, paseo);
+check("AG6 QA's own agent takes it at once", await until(async () => sent.length === 1, 2000), true);
+await runVerification(KEY, paseo);
+await sleep(400);
+check("AG6 verification is claimed and started, on its own agent", [(await stageOf("verification")).status, (await stageOf("verification")).queuedAt], ["running", undefined]);
+check("AG6 but its body is holding at the findings lane", lanesBlocked(), 1);
+check("AG6 so no second turn is in flight", sent.map((turn) => turn.id), ["a-qa"]);
+check("AG6 and the verification file it would read does not exist", existsSync(verificationPath("o/r", 1)), false);
+
+release();
+check("AG6 QA finishes", await until(async () => (await stageOf("qa")).status === "done", 6000), true);
+check("AG6 and only then does verification ask", await until(async () => sent.length === 2, 6000), true);
+check("AG6 on the agent of its own", sent.map((turn) => turn.id), ["a-qa", "a-ver"]);
+check("AG6 both stages are done", await until(async () => (await stageOf("verification")).status === "done", 6000), true);
+check("AG6 and the merged file carries both lists", await (async () => {
+  const file = await fileOnDisk();
+  return [file.findings.length, file.verification.length];
+})(), [writes, 1]);
+check("AG6 no lane is left blocked", lanesBlocked(), 0);
 
 stopLanes("the probe ended");
 __setSettingsForTest(null);
