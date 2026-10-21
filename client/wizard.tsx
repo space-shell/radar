@@ -18,7 +18,11 @@ import {
   type Fault,
 } from "../shared/feedback";
 import type { Finding, VerificationStep } from "../shared/findings";
-import { previewStepOf, wizardMachine } from "../shared/machines/wizard";
+import {
+  stepLabel,
+  wizardMachine,
+  type WizardScreen,
+} from "../shared/machines/wizard";
 import { ConfirmButton } from "./confirm";
 import { age } from "../shared/format";
 import { MultilineInput } from "./multiline";
@@ -225,7 +229,6 @@ export function Wizard({
   const [view, go, actor] = useMachine(logic);
 
   const findings = data?.findings ?? [];
-  const previewStep = previewStepOf(view.context.findings);
   const step = view.context.step;
 
   // The one thing the machine cannot see. Which screen is owed is decided by
@@ -398,7 +401,7 @@ export function Wizard({
 
     return (
       <SettingsSection
-        title={`Finding ${index + 1} of ${findings.length}`}
+        title={stepLabel("finding", index, findings.length)}
         info={`${finding.path}:${finding.line} on the ${finding.side} side`}
       >
         <SettingsCard>
@@ -650,9 +653,17 @@ export function Wizard({
     );
   };
 
+  // Resolved once and read by both the body and the footer, so the label under
+  // the Next arrow always names the screen above it. AC-AH1.
+  const screen: WizardScreen = view.matches({ reviewing: "preview" })
+    ? "preview"
+    : view.matches({ reviewing: "verification" })
+      ? "verification"
+      : "finding";
+
   const content = () => {
-    if (view.matches({ reviewing: "preview" })) return previewContent();
-    if (view.matches({ reviewing: "verification" }))
+    if (screen === "preview") return previewContent();
+    if (screen === "verification")
       return verificationStep(data?.verification ?? []);
     const finding = findings[step];
     return finding ? findingStep(finding, step) : null;
@@ -679,19 +690,24 @@ export function Wizard({
           <Text style={first ? styles.navOff : styles.nav}>← Previous</Text>
         </Pressable>
         {/* Centred by `space-between`, which means its own width decides where
-            it sits: stepping from 9 to 10 moved the counter sideways. Held at
-            the width of the last step, with the digits at their widest. */}
+            it sits: stepping from 9 to 10 moved the label sideways, and so does
+            moving from a finding to the preview. Held at the width of every
+            label it can show, with the digits at their widest. AC-AH7. */}
         <Steady
           align="center"
           widest={
-            <Text style={styles.counter}>
-              Step {"8".repeat(String(previewStep + 1).length)} of{" "}
-              {previewStep + 1}
-            </Text>
+            <>
+              <Text style={styles.counter}>
+                Finding {"8".repeat(String(findings.length).length)} of{" "}
+                {findings.length}
+              </Text>
+              <Text style={styles.counter}>Verification</Text>
+              <Text style={styles.counter}>Preview</Text>
+            </>
           }
         >
           <Text style={styles.counter}>
-            Step {step + 1} of {previewStep + 1}
+            {stepLabel(screen, step, findings.length)}
           </Text>
         </Steady>
         <Pressable

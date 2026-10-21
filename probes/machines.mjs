@@ -5,7 +5,11 @@ import {
   confirmMachine,
 } from "../shared/machines/confirm.ts";
 import { viewMachine } from "../shared/machines/view.ts";
-import { previewStepOf, wizardMachine } from "../shared/machines/wizard.ts";
+import {
+  previewStepOf,
+  stepLabel,
+  wizardMachine,
+} from "../shared/machines/wizard.ts";
 import { stageEvents } from "../shared/machines/stage.ts";
 import { nodeAppearance, statusWord } from "../shared/appearance.ts";
 import { recordMeta } from "../shared/format.ts";
@@ -1229,6 +1233,70 @@ const seedRecord = async (record) => {
     "R4 while the two stages that may be skipped still are",
     SKIPPABLE_STAGES.slice(),
     ["qa", "verification"],
+  );
+}
+
+// AH1. The heading and the footer. Both ends of the review screen call
+// `stepLabel`, so the test is that one walk produces one sentence per screen
+// and never a pair of numbers in different units. Three findings used to read
+// "Finding 1 of 3" over "Step 1 of 5". AC-AH1.
+{
+  const w = wizard();
+  w.ready(0, 3);
+  const walk = [];
+  for (;;) {
+    walk.push(stepLabel(w.at(), w.step(), 3));
+    if (w.at() === "preview") break;
+    w.send({ type: "NEXT" });
+  }
+  check("AH1 one label per screen, in the body's own words", walk, [
+    "Finding 1 of 3",
+    "Finding 2 of 3",
+    "Finding 3 of 3",
+    "Verification",
+    "Preview",
+  ]);
+}
+
+// AH1b. The denominator. Whatever the walk is doing, a label that names a
+// finding counts findings, never steps. The old footer counted the walk, which
+// is findings plus two, so this is the assertion that defect cannot return.
+{
+  for (const findings of [0, 1, 3, 8, 12]) {
+    const w = wizard();
+    w.ready(0, findings);
+    const labels = [];
+    for (;;) {
+      labels.push(stepLabel(w.at(), w.step(), findings));
+      if (w.at() === "preview") break;
+      w.send({ type: "NEXT" });
+    }
+    const counted = labels.filter((label) => label.startsWith("Finding "));
+    check(
+      `AH1b ${findings} findings give ${findings} finding labels`,
+      [counted.length, labels.length, previewStepOf(findings) + 1],
+      [findings, findings + 2, findings + 2],
+    );
+    check(
+      `AH1b and every one of them says "of ${findings}"`,
+      counted.every((label) => label.endsWith(` of ${findings}`)),
+      true,
+    );
+  }
+}
+
+// AH1c. The screen is passed in, not derived, so the label cannot name a
+// screen the body is not showing. The only way to read "Preview" is to be on
+// it, whatever the step says.
+{
+  check(
+    "AH1c the screen decides the words, the step only numbers them",
+    [
+      stepLabel("preview", 0, 3),
+      stepLabel("verification", 99, 3),
+      stepLabel("finding", 2, 3),
+    ],
+    ["Preview", "Verification", "Finding 3 of 3"],
   );
 }
 
