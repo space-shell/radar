@@ -1,6 +1,7 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { Text, TextInput, View } from "react-native";
+import type { Measurable } from "./keyboard";
 
 const LINE_HEIGHT = 18;
 /** Label, hint and the field's own padding, so `lines` counts lines of text. */
@@ -15,6 +16,11 @@ export interface MultilineInputProps {
   lines: number;
   theme: PluginTheme;
   onChangeText(text: string): void;
+  /**
+   * Asked to bring the whole box into view when it takes focus, label and all.
+   * Absent on a screen with nothing below the field for a keyboard to cover.
+   */
+  onReveal?(node: Measurable | null): void;
 }
 
 /**
@@ -42,8 +48,12 @@ export function MultilineInput({
   lines,
   theme,
   onChangeText,
+  onReveal,
 }: MultilineInputProps) {
   const { colors } = theme;
+  // The wrapper rather than the input, so revealing the field reveals the label
+  // and the hint that say what to type in it.
+  const box = useRef<View | null>(null);
   const styles = useMemo(
     () => ({
       wrapper: { gap: 6, padding: 12 },
@@ -69,7 +79,7 @@ export function MultilineInput({
   );
 
   return (
-    <View style={styles.wrapper}>
+    <View ref={box} style={styles.wrapper}>
       <Text style={styles.label}>{label}</Text>
       {hint ? <Text style={styles.hint}>{hint}</Text> : null}
       <TextInput
@@ -79,6 +89,7 @@ export function MultilineInput({
         placeholder={placeholder}
         placeholderTextColor={colors.foregroundMuted}
         onChangeText={onChangeText}
+        onFocus={onReveal ? () => onReveal(box.current) : undefined}
         style={styles.input}
         // Return types a newline rather than dismissing the field, which is the
         // whole point of a box this shape.

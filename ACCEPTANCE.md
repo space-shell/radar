@@ -929,6 +929,45 @@ hand is a record, not a second kind of thing.
       lands as an `unmapped` record carrying a Retry, the same as a swept one
       does. Awaiting the app.
 
+## AL. Typing where the keyboard would be
+
+The Android keyboard opens over the bottom of the screen and the comment boxes sit
+at the bottom of a tall step, so the box James was typing into was behind it. The
+host mounts its own keyboard handling app-wide and exports none of it to plugin
+code; the sandbox resolves `react-native` but not `react-native-keyboard-controller`.
+So this is built from `Keyboard` and `measureInWindow`, which a plugin can reach,
+and nothing about the host is assumed.
+
+- [x] **AC-AL1** How much the keyboard covers is measured against the column's own
+      bottom edge, not taken from the keyboard's height. Under `adjustResize` the
+      window has already shrunk and the answer is zero; under `adjustPan`, or
+      Android's forced edge to edge, it is the overlap. One sum is right in both,
+      which is what lets the plugin work without knowing which the host chose.
+      Verified by probe.
+- [x] **AC-AL2** A focused field is scrolled no further than it takes to clear the
+      shortened viewport. A field taller than the viewport shows its top, where the
+      label and the caret are. A field above the fold scrolls back down, and the
+      offset never goes past the top of the content. Verified by probe.
+- [x] **AC-AL3** The arithmetic is pure and lives in `shared/keyboard.ts`, so a
+      probe reads it without a renderer. `client/keyboard.ts` holds only the
+      measuring and the listeners. Verified by construction.
+- [x] **AC-AL4** On the wizard the whole column gives up its bottom: the footer
+      rises with the keyboard and the scrolling area shrinks to what is left, so
+      Previous, Next and the step count stay reachable while typing. Verified by
+      construction.
+- [x] **AC-AL5** The settings brief, ten lines with the save controls under it,
+      gets the same treatment. Verified by construction.
+- [x] **AC-AL6** Nothing is on a timer. The keyboard event records where the
+      keyboard's top edge is and re-measures; the inset shrinks the viewport; the
+      viewport's own layout event is what scrolls the field up. A focus that moves
+      nothing costs one measurement and no scroll. Verified by construction.
+- [ ] **AC-AL7** Typing into the replacement box on the Android phone: the box
+      stays visible above the keyboard, the footer sits on top of it, and
+      dismissing the keyboard puts the column back. Awaiting the app.
+- [ ] **AC-AL8** The same on the settings brief, where the field is ten lines tall
+      and cannot fit above the keyboard whole: its label and first lines are what
+      show. Awaiting the app.
+
 ## Awaiting the app
 
 Every criterion below is built and typechecked. None can be ticked from here: each asserts
@@ -942,6 +981,8 @@ invocation command, so there is no route to them except the running app.
 | AC-AJ4                         | One long press on the summary's risk line, on the Android phone                                                 |
 | AC-AK10                        | One link pasted into the add field on the Android phone                                                         |
 | AC-AK11                        | One link to a repository with no clone under a configured root                                                  |
+| AC-AL7                         | One comment typed into the wizard on the Android phone                                                          |
+| AC-AL8                         | One brief edited in Settings on the Android phone                                                               |
 | AC-AF28                        | One Cancel press on the node that press left queued                                                             |
 | AC-AG9                         | Two presses made during one open turn, QA then verification                                                     |
 | AC-AH6, AC-AH7                 | One walk through a record whose findings share a line, typing in the box at each step                           |

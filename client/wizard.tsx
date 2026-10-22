@@ -25,6 +25,7 @@ import {
 } from "../shared/machines/wizard";
 import { ConfirmButton } from "./confirm";
 import { age } from "../shared/format";
+import { useKeyboardAvoidance } from "./keyboard";
 import { MultilineInput } from "./multiline";
 import { Prose } from "./prose";
 import {
@@ -80,6 +81,8 @@ function styleSheet(theme: PluginTheme, compact: boolean) {
       fontSize: compact ? 15 : 16,
       flexShrink: 1,
     },
+    /** The scrolling area between the header and the footer. */
+    viewport: { flex: 1 },
     scroll: { gap: 12, paddingBottom: 12 },
     anchor: { color: colors.foregroundMuted, fontSize: 12 },
     severity: {
@@ -206,6 +209,19 @@ export function Wizard({
     () => styleSheet(theme, layout.compact),
     [theme, layout.compact],
   );
+
+  // The comment boxes sit at the bottom of a tall step, which is exactly where
+  // an Android keyboard lands. AC-AL4.
+  const {
+    inset,
+    rootRef,
+    viewportRef,
+    scrollRef,
+    onRootLayout,
+    onViewportLayout,
+    onScroll,
+    reveal,
+  } = useKeyboardAvoidance();
 
   // Two copies on purpose. The ref takes every keystroke, so typing never costs a
   // render or a disk write; the state copy is what the preview reads, and it is
@@ -435,6 +451,7 @@ export function Wizard({
             placeholder="Leave empty to send the text above"
             lines={5}
             theme={theme}
+            onReveal={reveal}
             onChangeText={(text) => {
               type((current) => ({
                 ...current,
@@ -505,6 +522,7 @@ export function Wizard({
           placeholder="Empty"
           lines={8}
           theme={theme}
+          onReveal={reveal}
           onChangeText={(text) =>
             type((current) => ({ ...current, body: text }))
           }
@@ -676,10 +694,32 @@ export function Wizard({
   const last = !view.can({ type: "NEXT" });
 
   return (
-    <View style={styles.screen}>
+    // The keyboard covers the bottom of the column, so the column gives up that
+    // much of its own bottom: the footer rises with it and the scrolling area
+    // shrinks to what is left. AC-AL4.
+    <View
+      ref={rootRef}
+      onLayout={onRootLayout}
+      style={
+        inset > 0 ? [styles.screen, { paddingBottom: inset }] : styles.screen
+      }
+    >
       {header}
 
-      <ScrollView contentContainerStyle={styles.scroll}>{content()}</ScrollView>
+      <View
+        ref={viewportRef}
+        onLayout={onViewportLayout}
+        style={styles.viewport}
+      >
+        <ScrollView
+          ref={scrollRef}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          contentContainerStyle={styles.scroll}
+        >
+          {content()}
+        </ScrollView>
+      </View>
 
       <View style={styles.footer}>
         <Pressable
