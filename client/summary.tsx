@@ -62,6 +62,26 @@ function styleSheet(theme: PluginTheme, compact: boolean) {
       textTransform: "uppercase" as const,
       letterSpacing: 0.6,
     },
+    labelRow: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 6,
+    },
+    // The verdict sits in the label, not the body, because it is the whole
+    // reason to read the field and a sentence to parse is not a judgment aid.
+    needed: {
+      color: colors.statusWarning,
+      fontSize: 11,
+      textTransform: "uppercase" as const,
+      letterSpacing: 0.6,
+      fontWeight: "600" as const,
+    },
+    notNeeded: {
+      color: colors.foregroundMuted,
+      fontSize: 11,
+      textTransform: "uppercase" as const,
+      letterSpacing: 0.6,
+    },
     body: { color: colors.foreground, fontSize: 12, lineHeight: 17 },
     foot: {
       flexDirection: "row" as const,
@@ -207,6 +227,27 @@ export function SummaryCard({
             <Text style={styles.label}>Scope</Text>
             <Prose style={styles.body}>{summary.scope}</Prose>
           </View>
+
+          {/* Absent on a record summarised before this field existed, which is
+              why it is drawn conditionally rather than with a fallback: an
+              empty verdict would read as "not required". AC-AN3. */}
+          {summary.verification ? (
+            <View style={styles.field}>
+              <View style={styles.labelRow}>
+                <Text style={styles.label}>Manual verification</Text>
+                <Text
+                  style={
+                    summary.verification.required
+                      ? styles.needed
+                      : styles.notNeeded
+                  }
+                >
+                  {summary.verification.required ? "Required" : "Not required"}
+                </Text>
+              </View>
+              <Prose style={styles.body}>{summary.verification.steps}</Prose>
+            </View>
+          ) : null}
         </>
       ) : null}
 

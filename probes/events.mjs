@@ -48,6 +48,7 @@ const drop = (n) =>
       changes: ["one file, nine lines"],
       risk: "nothing breaks below 10k rows",
       scope: "the ticket and the diff agree",
+      verification: { required: false, steps: "covered by the unit test beside it" },
       generatedAt: "2026-10-20T08:00:00Z",
     }),
   );

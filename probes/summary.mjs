@@ -3,6 +3,8 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { STATE_DIR, statePath, loadState } from "../server/state.ts";
 import { collectSummaries, runSummary, summarising, summaryPath } from "../server/summary.ts";
+import { intakeRecordSchema } from "../shared/inbox.ts";
+import { summaryFileSchema } from "../shared/summary.ts";
 
 let failures = 0;
 const check = (name, got, want) => {
@@ -30,6 +32,7 @@ const file = {
   changes: ["report-list.ts replaces 40 per-row queries with one join, +12 / -31."],
   risk: "A stale cache serves a deleted report for up to 60 seconds.",
   scope: "ENG-1 asks for pagination as well. The diff adds none.",
+  verification: { required: true, steps: "Open the report list for an account with 40 reports and confirm one query in the network panel." },
   generatedAt: "2026-10-16T08:00:00Z",
 };
 
@@ -153,6 +156,28 @@ check("AB6 a key with a press in flight is left alone", await collectSummaries()
 check("AB6 and nothing was stored under it", (await record()).summary, undefined);
 unblock();
 await settled();
+
+// AN. The judgment call the card is there to support. Whether a change needs a
+// person at a browser is the one thing read before deciding to spend a
+// verification run, so it has to survive the write and it has to be demanded of
+// the agent, without breaking a record summarised before it existed.
+await seed();
+await put(file);
+await collectSummaries();
+check("AN1 the verdict is stored, not dropped by the write", (await record()).summary?.verification, file.verification);
+
+const without = { ...file };
+delete without.verification;
+check("AN2 the agent may not omit it", summaryFileSchema.safeParse(without).success, false);
+check("AN3 but a record stored before it existed still parses", intakeRecordSchema.safeParse({
+  key: "o/r#1", repo: "o/r", number: 1, title: "t",
+  firstSeen: "2026-10-16T08:00:00Z", state: "created",
+  summary: { headline: file.headline, changes: file.changes, risk: file.risk, scope: file.scope, generatedAt: file.generatedAt },
+}).success, true);
+
+const refused = summaryFileSchema.safeParse({ ...file, verification: { required: false, steps: "  " } });
+check("AN4 not required still has to say why", refused.success, false);
+check("AN5 and the diction rules reach inside it", summaryFileSchema.safeParse({ ...file, verification: { required: true, steps: "Check your own dashboard." } }).success, false);
 
 console.log(failures === 0 ? "all clear" : `${failures} failures`);
 process.exit(failures === 0 ? 0 : 1);
