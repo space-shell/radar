@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { STATE_DIR, statePath, loadState } from "../server/state.ts";
 import { addByLink } from "../server/add.ts";
 import { LEDGER_DIR } from "../server/ledger.ts";
+import { stillArriving } from "../shared/inbox.ts";
 import { readdir } from "node:fs/promises";
 
 let fails = 0;
@@ -85,5 +86,25 @@ const ledger = weeks.length
   ? await readFile(`${LEDGER_DIR}/${weeks[0]}`, "utf8")
   : "";
 check(ledger.indexOf("restored") !== -1, "C10 and the week file says so", ledger);
+
+// The placeholder lives on the daemon so it survives a navigation, and it ends
+// the moment the record it stands for exists. AC-AK12, AC-AK13.
+const rows = (...keys) => keys.map((key) => ({ key }));
+check(
+  JSON.stringify(stillArriving(["owner/web#1"], rows())) === '["owner/web#1"]',
+  "C11 a claimed key with no record yet is still arriving",
+);
+check(
+  JSON.stringify(stillArriving(["owner/web#1"], rows("owner/web#1"))) === "[]",
+  "C12 and stops the moment its record lands, so the row never doubles",
+);
+check(
+  JSON.stringify(stillArriving(["a#1", "b#2"], rows("b#2"))) === '["a#1"]',
+  "C13 two at once are judged one at a time",
+);
+check(
+  JSON.stringify(stillArriving([], rows("a#1"))) === "[]",
+  "C14 nothing arriving is nothing shown",
+);
 
 console.log(fails === 0 ? "all clear" : `${fails} failures`);

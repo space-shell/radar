@@ -148,11 +148,6 @@ export function Inbox({
   const dismissingKeys = useDismissingKeys();
   const [showDismissed, setShowDismissed] = useState(false);
   const [adding, setAdding] = useState(false);
-  /**
-   * The key of a pull request added by hand whose launch has not landed yet.
-   * Held here rather than in the field, which closes on the press.
-   */
-  const [takingIn, setTakingIn] = useState<string | null>(null);
 
   /**
    * Which of the three views is on screen, and the record it is about. One value,
@@ -184,23 +179,14 @@ export function Inbox({
   };
 
   const records = data?.records ?? [];
-  // The launch landed, so the real row takes the placeholder's place. An effect
-  // rather than a render time filter, because the list below reads the state.
-  useEffect(() => {
-    if (takingIn && records.some((record) => record.key === takingIn))
-      setTakingIn(null);
-  }, [records, takingIn]);
-
   /**
-   * The floor under the placeholder. A launch is capped at two minutes and
-   * always writes its record, so this only fires when the daemon died holding
-   * the work, and a spinner that spins for ever is worse than one that stops.
+   * Pull requests added by hand whose launch has not landed yet. Read from the
+   * daemon rather than remembered here, so leaving the list and coming back
+   * finds the placeholder still there. The daemon is also what ends it: the
+   * launch is capped at two minutes and releases its mark whatever it did, so
+   * nothing here needs a floor under a spinner. AC-AK12.
    */
-  useEffect(() => {
-    if (!takingIn) return;
-    const timer = setTimeout(() => setTakingIn(null), 5 * 60 * 1000);
-    return () => clearTimeout(timer);
-  }, [takingIn]);
+  const takingIn = data?.takingIn ?? [];
   const active = records.filter((record) => !record.dismissedAt);
   const dismissed = records
     .filter((record) => record.dismissedAt)
@@ -446,10 +432,7 @@ export function Inbox({
       {adding ? (
         <AddPullRequest
           theme={theme}
-          onTakingIn={(key) => {
-            setTakingIn(key);
-            setShowDismissed(false);
-          }}
+          onTakingIn={() => setShowDismissed(false)}
           onPresent={(key) => {
             setShowDismissed(false);
             go({ type: "OPEN_DETAIL", key });
@@ -463,13 +446,15 @@ export function Inbox({
       ) : null}
 
       <ScrollView>
-        {takingIn && !showDismissed ? (
-          <View style={styles.taking}>
-            <BusyDots theme={theme} label={`Taking in ${takingIn}`} size={3} />
-            <Text style={styles.takingText}>Taking in {takingIn}</Text>
-          </View>
-        ) : null}
-        {shown.length === 0 && !takingIn ? (
+        {showDismissed
+          ? null
+          : takingIn.map((key) => (
+              <View key={key} style={styles.taking}>
+                <BusyDots theme={theme} label={`Taking in ${key}`} size={3} />
+                <Text style={styles.takingText}>Taking in {key}</Text>
+              </View>
+            ))}
+        {shown.length === 0 && takingIn.length === 0 ? (
           <Text style={styles.empty}>
             {showDismissed
               ? "Nothing dismissed."
