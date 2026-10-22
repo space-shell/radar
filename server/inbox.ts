@@ -1,8 +1,10 @@
 import {
   activityAt,
   intakeRecordSchema,
+  stillArriving,
   type IntakeRecord,
 } from "../shared/inbox";
+import { takingIn } from "./add";
 import { REVIEW_STAGES, reviewOf } from "../shared/review";
 import { workingAgents } from "./reconcile";
 import { loadConfig } from "./settings";
@@ -78,6 +80,7 @@ export async function readInboxState() {
     dryRun: config.dryRun,
     unreadable,
     summarising: awaitingSummary(records),
+    takingIn: stillArriving(takingIn(), records),
     records: records.reverse(),
   };
 }

@@ -928,6 +928,17 @@ hand is a record, not a second kind of thing.
 - [ ] **AC-AK11** A link to a pull request in a repository with no local clone
       lands as an `unmapped` record carrying a Retry, the same as a swept one
       does. Awaiting the app.
+- [x] **AC-AK12** The place held for an arriving pull request survives leaving
+      the list and coming back. It is held on the daemon, beside the launch it
+      stands for, rather than in the screen that the navigation unmounts, so it
+      also survives a reload and reads the same on the other device. The daemon
+      is what ends it too: the launch is capped at two minutes and releases its
+      mark whatever it did, so no spinner needs a floor under it. The list
+      refetches every five seconds while one is arriving and every thirty
+      otherwise. Verified by probe.
+- [x] **AC-AK13** The place is given up the moment the record exists, not when
+      the launch releases it, so there is never a placeholder above the row it
+      was standing in for. Verified by probe.
 
 ## AL. Typing where the keyboard would be
 

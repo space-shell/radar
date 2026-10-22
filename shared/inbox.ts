@@ -135,6 +135,21 @@ export function pullRequestUrl(record: {
 
 export type IntakeRecord = z.infer<typeof intakeRecordSchema>;
 
+/**
+ * Which of the keys being taken in still have nothing to show for themselves.
+ *
+ * A launch writes its record and then releases its mark, so for a moment both
+ * are true. Showing a placeholder above the row it is a placeholder for would
+ * read as two arrivals, so the record wins the moment it exists. AC-AK13.
+ */
+export function stillArriving(
+  pending: string[],
+  records: ReadonlyArray<{ key: string }>,
+): string[] {
+  const landed = new Set(records.map((record) => record.key));
+  return pending.filter((key) => !landed.has(key));
+}
+
 export interface StatusNote {
   label: string;
   /** `settled` means nothing is waiting on James. It is what makes a row dismissable. */
@@ -312,6 +327,14 @@ export const readInbox = defineRpc({
      * can say so. AC-Q3, AC-AD2.
      */
     summarising: z.array(z.string()),
+    /**
+     * Keys added by hand whose launch is still running. The daemon is again the
+     * only thing that knows: the press was answered in milliseconds and the
+     * launch behind it takes up to two minutes. Holding it here rather than in
+     * the screen is what keeps the placeholder through a navigation, a reload,
+     * and a look from the other device. AC-AK12.
+     */
+    takingIn: z.array(z.string()),
     records: z.array(intakeRecordSchema),
   }),
 });

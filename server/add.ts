@@ -9,6 +9,20 @@ import { loadConfig } from "./settings";
 import { parsePullRequestLink } from "../shared/pr-link";
 import { pullRequestUrl } from "../shared/inbox";
 
+/**
+ * Keys whose launch has begun and whose record has not landed yet.
+ *
+ * In memory on purpose, for the same reason the summary set is: a launch exists
+ * only as long as this daemon does, so a restart clearing the set is the truth
+ * rather than a loss. The screen reads it through the inbox, which is what keeps
+ * the placeholder on the list when James navigates away and back. AC-AK12.
+ */
+const inFlight = new Set<string>();
+
+export function takingIn(): string[] {
+  return [...inFlight];
+}
+
 export interface AddResult {
   ok: boolean;
   error?: string;
@@ -118,6 +132,9 @@ export async function addByLink(link: string): Promise<AddResult> {
   if (!claimed) return { ok: true, key, already: "present" };
 
   const { dryRun } = await loadConfig();
+  // Marked before the launch and released in the `finally`, so the window the
+  // placeholder covers is exactly the window the work occupies.
+  inFlight.add(key);
   void (async () => {
     try {
       await intake(request, await intakeEnvironment(dryRun), "manual");
@@ -129,6 +146,8 @@ export async function addByLink(link: string): Promise<AddResult> {
           (seen) => seen !== key,
         );
       });
+    } finally {
+      inFlight.delete(key);
     }
   })();
 

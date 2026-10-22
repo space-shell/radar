@@ -69,7 +69,11 @@ export function useInbox() {
   const query = useQuery({
     queryKey: INBOX_QUERY,
     queryFn: () => read({}),
-    refetchInterval: 30_000,
+    // Faster while a pull request is arriving, because that is the one moment
+    // James is watching the list rather than reading it. Back to the resting
+    // rate as soon as the row lands. AC-AK12.
+    refetchInterval: (query) =>
+      query.state.data?.takingIn.length ? 5_000 : 30_000,
   });
 
   return {
