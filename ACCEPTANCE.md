@@ -979,6 +979,26 @@ and nothing about the host is assumed.
       and cannot fit above the keyboard whole: its label and first lines are what
       show. Awaiting the app.
 
+## AM. The summary spinner, and what is allowed to stop it
+
+The spinner on the summary card is driven by `awaitingSummary`, which reads the
+agent's status because nothing else knows an intake turn is still writing. It
+excluded any record with a stage reading `running`, which was written for QA and
+verification sharing the intake agent and caught two more stages besides. So
+pressing Acknowledge mid-summary emptied the card until the reaction came back,
+and a queued QA emptied it for the whole of the turn it was queued behind.
+
+- [x] **AC-AM1** Only a started QA or verification is treated as the agent being
+      busy with something other than the summary. Acknowledge and feedback are a
+      `gh` call inside one RPC and never reach the agent, so neither stops the
+      spinner. Verified by probe.
+- [x] **AC-AM2** A queued stage does not stop it either. The press has landed but
+      the turn has not been sent, so what the agent is running is still the
+      summary. Verified by probe.
+- [x] **AC-AM3** A started QA does still stop it, which is AC-AD7 unchanged: one
+      agent runs both, so its status alone cannot tell a QA turn from a summary
+      turn. Verified by probe.
+
 ## Awaiting the app
 
 Every criterion below is built and typechecked. None can be ticked from here: each asserts
