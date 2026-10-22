@@ -44,7 +44,7 @@ function prompt(record: IntakeRecord, brief: string, output: string): string {
   ].join("\n");
 }
 
-/** Keeps the four prose fields and drops the envelope the agent wrote. */
+/** Keeps the summary fields and drops the envelope the agent wrote. */
 async function store(key: string, file: SummaryFile): Promise<void> {
   await updateState((state) => {
     const record = state.intake.find((candidate) => candidate.key === key);
@@ -54,6 +54,7 @@ async function store(key: string, file: SummaryFile): Promise<void> {
       changes: file.changes,
       risk: file.risk,
       scope: file.scope,
+      verification: file.verification,
       generatedAt: file.generatedAt,
     };
     // A summary that arrived makes the last failure stale, whichever path wrote it.

@@ -9,6 +9,7 @@ const base = {
   changes: ["12 files, +310 / -88, all under apps/web/src/features/dashboard."],
   risk: "The map has no eviction, so a request touching 10k companies holds 10k entries.",
   scope: "ENG-1182 asked for the dashboard only. The change also touches the settings header.",
+  verification: { required: true, steps: "Open the dashboard for a company with 50 holdings and confirm the rows render once." },
 };
 
 const cases = [
@@ -24,6 +25,11 @@ const cases = [
   ["blank risk", { ...base, risk: "   " }],
   ["over length", { ...base, headline: "x".repeat(201) }],
   ["banned in a change", { ...base, changes: ["A notable refactor of the loader."] }],
+  ["no verification", { ...base, verification: undefined }],
+  ["verification not required", { ...base, verification: { required: false, steps: "Covered by report-list.spec.ts, which asserts the query count." } }],
+  ["required not a boolean", { ...base, verification: { required: "yes", steps: "Open the dashboard." } }],
+  ["blank steps", { ...base, verification: { required: false, steps: "   " } }],
+  ["banned in steps", { ...base, verification: { required: true, steps: "Check your own dashboard." } }],
 ];
 
 for (const [name, value] of cases) {

@@ -999,6 +999,34 @@ and a queued QA emptied it for the whole of the turn it was queued behind.
       agent runs both, so its status alone cannot tell a QA turn from a summary
       turn. Verified by probe.
 
+## AN. Whether this one needs a person at a browser
+
+The verification stage is the expensive one, and nothing on the card said whether
+it was worth spending. The summary now carries the judgment call itself: a verdict
+and, in both directions, the reason behind it.
+
+- [x] **AC-AN1** The summary carries `verification.required`, a boolean, and
+      `verification.steps`, the line behind it. Required renders as a warning
+      coloured word beside the label, so the verdict is read without reading the
+      sentence. Verified by probe for the write, by construction for the look.
+- [x] **AC-AN2** The agent may not omit it. `summaryFileSchema` requires it, so a
+      file written without it fails the read and names the field, which is the
+      same treatment every other field gets. Verified by probe.
+- [x] **AC-AN3** A record summarised before the field existed still parses.
+      `summarySchema` keeps it optional, because `readInboxState` drops a record
+      that fails the read: a required field there would have blanked every row
+      already in the ledger. The card draws the section only when it is there, so
+      an absent verdict is absent rather than reading as "not required". Verified
+      by probe.
+- [x] **AC-AN4** `required: false` still needs its reason. A blank `steps` is
+      refused, because "no" with nothing behind it cannot be told from an agent
+      that did not look. Verified by probe.
+- [x] **AC-AN5** The diction rules reach inside the field. Second person in
+      `steps` fails the same way it fails in `risk`. Verified by probe.
+- [ ] **AC-AN6** On the next pull request taken in: the card shows the verdict,
+      and the steps are specific enough to act on without opening the diff.
+      Awaiting the app.
+
 ## Awaiting the app
 
 Every criterion below is built and typechecked. None can be ticked from here: each asserts
@@ -1045,6 +1073,7 @@ invocation command, so there is no route to them except the running app.
 | AC-O7                          | A look at the Acknowledge node on a pending record, checked for the absence of Skip                             |
 | AC-Q5, AC-Q6                   | One Run QA press on a live record, watched for a single spinner and a node that opens while running             |
 | AC-Q7                          | One tap on the summary headline, collapsed and expanded                                                         |
+| AC-AN6                         | The verification verdict on the first pull request summarised after this landed                                 |
 | AC-R1                          | One first press on any control, read for the armed colour                                                       |
 | AC-G28                         | One character typed into a replacement, watched for the switch moving and the cursor staying put                |
 | AC-X1 to AC-X5                 | One press on a confirm, one on the clock, one on each tab, watched for anything beside them moving              |

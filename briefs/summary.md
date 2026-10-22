@@ -1,6 +1,6 @@
 # Summary brief
 
-Write a four part summary of the pull request this workspace is checked out at, to the
+Write a five part summary of the pull request this workspace is checked out at, to the
 summary file named in the prompt. Writing that file is the whole job. It is read by one
 person, James, in the radar detail view.
 
@@ -24,16 +24,16 @@ These are James' own rules, from `~/.claude/CLAUDE.md`. The file is validated ag
 them on read, and a breach fails the whole summary, naming the word that did it. Rewriting
 the sentence is cheaper than arguing with the schema.
 
-| Rule | |
-| --- | --- |
-| Lead with the outcome | The first sentence is the result, not a description of the pull request |
-| Name the assessment | "Won't scale past 10k rows, O(n^2) lookup", not "might not be ideal" |
-| Quantify, or say what is unknown | Numbers, thresholds, counts. Never a vague adjective |
-| Name the threshold | "Takes 4s, target <500ms", not "slow" |
-| Say it plainly | "This breaks X". No euphemism |
-| State uncertainty plainly | "I don't know", "this is unverified". Never a confident-sounding hedge |
-| Active voice, impersonal | No second person. No first person where the claim stands alone |
-| Never an em dash | Use a comma, colon, semicolon, brackets, or a full stop |
+| Rule                             |                                                                         |
+| -------------------------------- | ----------------------------------------------------------------------- |
+| Lead with the outcome            | The first sentence is the result, not a description of the pull request |
+| Name the assessment              | "Won't scale past 10k rows, O(n^2) lookup", not "might not be ideal"    |
+| Quantify, or say what is unknown | Numbers, thresholds, counts. Never a vague adjective                    |
+| Name the threshold               | "Takes 4s, target <500ms", not "slow"                                   |
+| Say it plainly                   | "This breaks X". No euphemism                                           |
+| State uncertainty plainly        | "I don't know", "this is unverified". Never a confident-sounding hedge  |
+| Active voice, impersonal         | No second person. No first person where the claim stands alone          |
+| Never an em dash                 | Use a comma, colon, semicolon, brackets, or a full stop                 |
 
 Rejected on sight, in any field:
 
@@ -61,20 +61,48 @@ Write exactly this shape, to the path in the prompt, and nothing else to it:
     "12 files, +310 / -88, all under apps/web/src/features/dashboard."
   ],
   "risk": "The map has no eviction, so a request touching 10k companies holds 10k entries. Unbounded, but a request is short lived.",
-  "scope": "ENG-1182 asked for the dashboard only. The change also touches the settings header, which the ticket does not mention."
+  "scope": "ENG-1182 asked for the dashboard only. The change also touches the settings header, which the ticket does not mention.",
+  "verification": {
+    "required": true,
+    "steps": "Open the dashboard for a company with more than 50 holdings and confirm the rows render once. Reload and confirm the count stays at 6 in the network panel. Switch company and confirm the previous company's rows are gone."
+  }
 }
 ```
 
-| Field | Content | Ceiling |
-| --- | --- | --- |
-| `headline` | One sentence. What the pull request does, as an outcome | 200 characters |
-| `changes` | What the diff actually does, read from the diff and not from the description. Files and packages touched, with line counts | 1 to 6 lines, 160 characters each |
-| `risk` | What breaks, under what load, at what threshold. "No risk found" is a real answer | 300 characters |
-| `scope` | The ticket against what is implemented, and the description against the content. Both gaps, in both directions. "Matches" is a real answer | 300 characters |
+| Field                   | Content                                                                                                                                    | Ceiling                           |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------- |
+| `headline`              | One sentence. What the pull request does, as an outcome                                                                                    | 200 characters                    |
+| `changes`               | What the diff actually does, read from the diff and not from the description. Files and packages touched, with line counts                 | 1 to 6 lines, 160 characters each |
+| `risk`                  | What breaks, under what load, at what threshold. "No risk found" is a real answer                                                          | 300 characters                    |
+| `scope`                 | The ticket against what is implemented, and the description against the content. Both gaps, in both directions. "Matches" is a real answer | 300 characters                    |
+| `verification.required` | `true` when a person has to look at the running application to know this works. `false` when reading the diff and the tests is enough      | boolean                           |
+| `verification.steps`    | What that person would do, at most three steps, in the order they happen. Name the screen, the state to put it in, and what to look at     | 400 characters                    |
 
 Every field is required and none may be empty. The file is validated against a schema on
 read, and a file that does not parse fails the whole run, so write it once and write it
 whole.
+
+### `verification`
+
+This is the one field James acts on before reading the rest. It decides whether he spends
+a verification run on this pull request, so answer the question he is asking: is there
+behaviour here that only shows up in a browser.
+
+`true` when the change alters what the application does in front of a person: a rendered
+screen, a flow through more than one page, a background job whose effect is visible, a
+migration whose shape is checked after it runs. `false` when the change is covered by what
+can be read: a refactor with no behaviour change, a type change, a test, a build or
+configuration change, a dependency bump, a documentation edit.
+
+`steps` carries the reason in both cases, and is never empty. When `required` is `true`,
+write the steps. When it is `false`, write the one line that says why not, naming the test
+or the fact that settles it: "Covered by `report-list.spec.ts`, which asserts the query
+count." A bare "Not required" is indistinguishable from not having looked.
+
+Take the steps from the pull request description where it names any, and say so. Where the
+description names none, write what the steps would be from the diff. Where a step cannot
+be run without production data or a credential this machine does not hold, say that
+instead of writing the step.
 
 ## Method
 

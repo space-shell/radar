@@ -52,6 +52,20 @@ function line(max: number) {
     });
 }
 
+/**
+ * Whether the change needs a human at a browser, and what that would take.
+ *
+ * `required` is the whole point of the field: it is the one thing James reads to
+ * decide whether to spend the verification stage on this pull request, and a
+ * sentence he has to parse to get a yes or a no is not a judgment aid. `steps`
+ * carries the reason either way. Not required still needs one, because "no" with
+ * nothing behind it is indistinguishable from an agent that did not look.
+ */
+const verificationSchema = z.object({
+  required: z.boolean(),
+  steps: line(400),
+});
+
 export const summarySchema = z.object({
   /** The first sentence is the result. Not "this PR adds", but what it does. */
   headline: line(200),
@@ -61,6 +75,13 @@ export const summarySchema = z.object({
   risk: line(300),
   /** Ticket against implementation, description against content. */
   scope: line(300),
+  /**
+   * Optional here and required in the file below. A record summarised before this
+   * field existed must still parse: `readInboxState` drops a record that fails the
+   * read and counts it unreadable, so a required field would have blanked every
+   * row already in the ledger. AC-AN2.
+   */
+  verification: verificationSchema.optional(),
   generatedAt: z.string().min(1),
 });
 
@@ -68,6 +89,9 @@ export const summarySchema = z.object({
 export const summaryFileSchema = summarySchema.extend({
   version: z.literal(1),
   key: z.string().min(1),
+  // Required of the agent, whatever the stored shape tolerates. A summary written
+  // today without it is a brief that was not followed, not an older record.
+  verification: verificationSchema,
 });
 
 export type PullRequestSummary = z.infer<typeof summarySchema>;
