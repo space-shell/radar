@@ -16,6 +16,7 @@ import {
   type ReviewEvent,
 } from "../shared/feedback";
 import {
+  addPullRequest,
   markSeen,
   readInbox,
   retryIntake,
@@ -37,6 +38,7 @@ const STAGE_MUTATION = ["radar", "stage"];
 const ACTION_MUTATION = ["radar", "action"];
 const SUMMARY_MUTATION = ["radar", "summary"];
 const SWEEP_MUTATION = ["radar", "sweep"];
+const ADD_MUTATION = ["radar", "add"];
 const feedbackQuery = (key: string) => ["radar", "feedback", key];
 
 export interface DismissInput {
@@ -322,6 +324,41 @@ export function useSweep(refresh: () => void) {
       toast.error(`The sweep failed: ${result.error ?? "no reason given"}`);
     },
     onError: (caught) => toast.error(`The sweep failed: ${String(caught)}`),
+    onSettled: refresh,
+  });
+}
+
+/**
+ * Takes in a pull request James pasted.
+ *
+ * The toast carries the whole of the failure, because every way this refuses is
+ * something about the string he pasted and he cannot fix what he cannot read.
+ * A record already in the inbox is a success with nothing to say, so the caller
+ * takes him to the row instead. AC-AK5.
+ */
+export function useAddPullRequest(refresh: () => void) {
+  const add = useRpc(addPullRequest);
+  const toast = useToast();
+
+  return useMutation({
+    mutationKey: ADD_MUTATION,
+    mutationFn: (link: string) => add({ link }),
+    onSuccess: (result) => {
+      if (!result.ok) {
+        toast.error(result.error ?? "The pull request could not be added");
+        return;
+      }
+      if (result.already === "restored" && result.key) {
+        toast.show(`${shortKey(result.key)} restored to the inbox`, {
+          variant: "success",
+        });
+        return;
+      }
+      if (result.already) return;
+      if (result.key) toast.show(`Taking in ${shortKey(result.key)}`);
+    },
+    onError: (caught) =>
+      toast.error(`The pull request could not be added: ${String(caught)}`),
     onSettled: refresh,
   });
 }

@@ -3,10 +3,17 @@ import { join } from "node:path";
 import { execCommand } from "@getpaseo/plugin/server";
 import { clearArtifact, prepareArtifact } from "./artifact";
 import { briefPath } from "./briefs";
+import type { ReviewRequest } from "./github";
+import { note } from "./ledger";
+import { linearRef, type LinearNaming } from "./linear-ref";
+import { log } from "./log";
+import { discoverCheckouts } from "./repos";
 import { summaryPath } from "./summary";
+import { pullRequestUrl, type IntakeRecord } from "../shared/inbox";
 import { baseAgent, providerString, type AgentSpec } from "../shared/settings";
 import { loadConfig } from "./settings";
-import { setupLines } from "./setup";
+import { setupCommand, setupLines } from "./setup";
+import { updateState } from "./state";
 import { paseoBin } from "./binaries";
 
 /** Everything a launch needs. Both a live ReviewRequest and a stored record satisfy it. */
@@ -190,4 +197,129 @@ export async function agentStatuses(): Promise<Map<string, string>> {
 /** Every agent the daemon still holds, without their statuses. R3. */
 export async function liveAgentIds(): Promise<Set<string>> {
   return new Set((await agentStatuses()).keys());
+}
+
+/** How this machine names Linear issues. Read per sweep, so an edit takes effect. */
+export async function linearNaming(): Promise<LinearNaming> {
+  const { linearWorkspace, linearTeamKeys } = await loadConfig();
+  return { workspace: linearWorkspace, teamKeys: linearTeamKeys };
+}
+
+/** Where a record came from. Only the ledger line reads it. */
+export type IntakeOrigin = "search" | "manual";
+
+/** What a launch needs that is the same for every pull request taken in. */
+export interface IntakeEnvironment {
+  checkouts: Map<string, string>;
+  briefs: Briefs;
+  naming: LinearNaming;
+  setup: string | null;
+  dryRun: boolean;
+}
+
+/**
+ * Gathered once, not once per pull request: the checkout map walks every clone
+ * under every root asking git for its origin, which is far too much work to
+ * repeat for each row of one sweep.
+ */
+export async function intakeEnvironment(
+  dryRun: boolean,
+): Promise<IntakeEnvironment> {
+  const [checkouts, briefs, naming, setup] = await Promise.all([
+    discoverCheckouts(),
+    briefPaths(),
+    linearNaming(),
+    setupCommand(),
+  ]);
+  return { checkouts, briefs, naming, setup, dryRun };
+}
+
+/**
+ * Takes in one pull request. The launch runs outside the write lock because it
+ * can take two minutes; only the resulting record is written under it. R2.
+ *
+ * One function for both ways in. A pull request James pasted is reviewed the
+ * same way as one GitHub asked him to review: same worktree, same brief, same
+ * summary, same record. Only the ledger line differs, because "review
+ * requested" would be untrue of a record nobody requested. AC-AK7.
+ */
+export async function intake(
+  request: ReviewRequest,
+  { checkouts, briefs, naming, setup, dryRun }: IntakeEnvironment,
+  origin: IntakeOrigin = "search",
+): Promise<void> {
+  const checkout = checkouts.get(request.repo);
+  const record: IntakeRecord = {
+    key: request.key,
+    repo: request.repo,
+    number: request.number,
+    title: request.title,
+    firstSeen: new Date().toISOString(),
+    state: "created",
+    linearUrl: linearRef(request.body, naming),
+  };
+
+  if (!checkout) {
+    record.state = "unmapped";
+    log(`unmapped repo ${request.repo} for PR #${request.number}, skipping`);
+  } else if (dryRun) {
+    record.state = "dry-run";
+    log(
+      `would launch: paseo ${launchArgs(
+        request,
+        checkout,
+        briefs,
+        setup,
+        baseAgent(await loadConfig()),
+      )
+        .slice(0, -1)
+        .join(" ")}`,
+    );
+  } else {
+    try {
+      const { agentId, workspaceId } = await launchIntake(
+        request,
+        checkout,
+        briefs,
+        setup,
+      );
+      if (agentId) {
+        record.agentId = agentId;
+        record.workspaceId = workspaceId;
+        log(`launched ${request.key} as agent ${agentId}`);
+      } else {
+        record.state = "failed";
+        log(`launch for ${request.key} produced no agent`);
+      }
+    } catch (error) {
+      record.state = "failed";
+      log(`launch failed for ${request.key}: ${String(error)}`);
+    }
+  }
+
+  const taken = await updateState((state) => {
+    // Re-check inside the lock: another path may have taken this one in meanwhile.
+    if (state.intake.some((existing) => existing.key === record.key))
+      return false;
+    state.intake.push(record);
+    if (!state.seenPullRequests.includes(record.key))
+      state.seenPullRequests.push(record.key);
+    return true;
+  });
+
+  // One line per arrival, and only for the arrival that actually landed, so a
+  // record taken in twice cannot read as two review requests.
+  if (taken) {
+    const arrival =
+      origin === "manual"
+        ? `added by hand, ${record.title}`
+        : `review requested, ${record.title}`;
+    note({
+      source: "github",
+      subject: record.key,
+      what:
+        record.state === "created" ? arrival : `${arrival} (${record.state})`,
+      url: pullRequestUrl(record),
+    });
+  }
 }

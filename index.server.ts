@@ -3,23 +3,18 @@ import {
   pollNotifications,
   pullRequestBody,
   searchReviewRequests,
-  type ReviewRequest,
 } from "./server/github";
-import { linearRef, type LinearNaming } from "./server/linear-ref";
+import { linearRef } from "./server/linear-ref";
 import { sweepLinear } from "./server/radar";
-import { discoverCheckouts } from "./server/repos";
 import {
-  briefPaths,
-  launchIntake,
-  launchArgs,
+  intake,
+  intakeEnvironment,
+  linearNaming,
   resolveLaunch,
-  type Briefs,
 } from "./server/intake";
 import { loadConfig } from "./server/settings";
 import { loadState, updateState } from "./server/state";
-import type { IntakeRecord } from "./shared/inbox";
 import {
-  baseAgent,
   radarSettings,
   readLegacyConfig,
   readProviders,
@@ -30,8 +25,8 @@ import { readShippedBrief } from "./server/briefs";
 import { attachSettings, readLegacyFile } from "./server/settings";
 import { configPath } from "./server/state";
 import {
+  addPullRequest,
   markSeen,
-  pullRequestUrl,
   readInbox,
   retryIntake,
   runStageAction,
@@ -41,9 +36,10 @@ import {
   sweepNow,
   undoStageAction,
 } from "./shared/inbox";
+import { addByLink } from "./server/add";
 import { dismissRecord, retryRecord } from "./server/actions";
 import { markRecordSeen, readInboxState } from "./server/inbox";
-import { note, writeOpen } from "./server/ledger";
+import { writeOpen } from "./server/ledger";
 import { stopLanes } from "./server/queue";
 import { setStageStatus } from "./server/stages";
 import { runStageFor, undoStageFor } from "./server/stage-actions";
@@ -51,7 +47,6 @@ import { adoptFindings } from "./server/qa";
 import { reap } from "./server/reap";
 import { reconcileAgents } from "./server/reconcile";
 import { attachHooks, settleDue } from "./server/hooks";
-import { setupCommand } from "./server/setup";
 import { singleFlight } from "./server/single-flight";
 import { refreshStatuses } from "./server/status";
 import { runSummary as runSummaryFor } from "./server/summary";
@@ -73,98 +68,6 @@ const MIN_POLL_SECONDS = 60;
 /** Each lookup is a 30s `gh pr view` and the tick is serial, so the sweep is capped. R11. */
 const MAX_LINEAR_LOOKUPS = 5;
 const MAX_LINEAR_ATTEMPTS = 3;
-
-/** How this machine names Linear issues. Read per sweep, so an edit takes effect. */
-async function linearNaming(): Promise<LinearNaming> {
-  const { linearWorkspace, linearTeamKeys } = await loadConfig();
-  return { workspace: linearWorkspace, teamKeys: linearTeamKeys };
-}
-
-/**
- * Takes in one pull request. The launch runs outside the write lock because it
- * can take two minutes; only the resulting record is written under it. R2.
- */
-async function intake(
-  request: ReviewRequest,
-  checkouts: Map<string, string>,
-  briefs: Briefs,
-  naming: LinearNaming,
-  setup: string | null,
-  dryRun: boolean,
-): Promise<void> {
-  const checkout = checkouts.get(request.repo);
-  const record: IntakeRecord = {
-    key: request.key,
-    repo: request.repo,
-    number: request.number,
-    title: request.title,
-    firstSeen: new Date().toISOString(),
-    state: "created",
-    linearUrl: linearRef(request.body, naming),
-  };
-
-  if (!checkout) {
-    record.state = "unmapped";
-    log(`unmapped repo ${request.repo} for PR #${request.number}, skipping`);
-  } else if (dryRun) {
-    record.state = "dry-run";
-    log(
-      `would launch: paseo ${launchArgs(
-        request,
-        checkout,
-        briefs,
-        setup,
-        baseAgent(await loadConfig()),
-      )
-        .slice(0, -1)
-        .join(" ")}`,
-    );
-  } else {
-    try {
-      const { agentId, workspaceId } = await launchIntake(
-        request,
-        checkout,
-        briefs,
-        setup,
-      );
-      if (agentId) {
-        record.agentId = agentId;
-        record.workspaceId = workspaceId;
-        log(`launched ${request.key} as agent ${agentId}`);
-      } else {
-        record.state = "failed";
-        log(`launch for ${request.key} produced no agent`);
-      }
-    } catch (error) {
-      record.state = "failed";
-      log(`launch failed for ${request.key}: ${String(error)}`);
-    }
-  }
-
-  const taken = await updateState((state) => {
-    // Re-check inside the lock: another path may have taken this one in meanwhile.
-    if (state.intake.some((existing) => existing.key === record.key))
-      return false;
-    state.intake.push(record);
-    if (!state.seenPullRequests.includes(record.key))
-      state.seenPullRequests.push(record.key);
-    return true;
-  });
-
-  // One line per arrival, and only for the arrival that actually landed, so a
-  // record taken in twice cannot read as two review requests.
-  if (taken) {
-    note({
-      source: "github",
-      subject: record.key,
-      what:
-        record.state === "created"
-          ? `review requested, ${record.title}`
-          : `review requested, ${record.title} (${record.state})`,
-      url: pullRequestUrl(record),
-    });
-  }
-}
 
 /**
  * Resolves Linear issues for records taken in before bodies were stored.
@@ -258,12 +161,9 @@ async function reconcile(dryRun: boolean): Promise<void> {
   const fresh = open.filter((request) => !seen.has(request.key));
 
   if (fresh.length > 0) {
-    const checkouts = await discoverCheckouts();
-    const briefs = await briefPaths();
-    const naming = await linearNaming();
-    const setup = await setupCommand();
+    const environment = await intakeEnvironment(dryRun);
     for (const request of fresh) {
-      await intake(request, checkouts, briefs, naming, setup, dryRun);
+      await intake(request, environment);
     }
   }
 
@@ -414,6 +314,7 @@ export default function contribute(server: PluginServerContext) {
     }
   });
   server.handle(sweepNow, () => sweepOnDemand());
+  server.handle(addPullRequest, ({ link }) => addByLink(link));
   server.handle(retryIntake, ({ key }) => retryRecord(key));
   server.handle(setDismissed, ({ key, dismissed }) =>
     dismissRecord(key, dismissed),

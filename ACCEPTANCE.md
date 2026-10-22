@@ -875,6 +875,60 @@ name.
 - [x] **AC-AJ3** Text inside a `Pressable` stays `Text`. Selection and a press both begin with a long hold, and a stage node, the summary's collapse toggle, every link and the back control are each worth more as the thing they do. One string pays for this: when the record has an agent, the pull request title is the control that opens it, so the title is copyable on a record without an agent and not on one with it. Verified by construction.
 - [ ] **AC-AJ4** A long press on the summary's risk line on Android raises the selection handles and Copy puts the line on the clipboard. The prop reaches a native text view, which no probe here can see. Awaiting the app.
 
+## AK. A pull request James names himself
+
+The inbox only ever held what GitHub asked him to review. A pull request he
+wants to look at for any other reason, one he found in a message, one he is
+reviewing off the record, one whose review request went to a team alias, had no
+way in. The intake path itself was never the limitation: it takes a repository,
+a number, a title and a body, and `gh search prs --review-requested=@me` was
+only one way of supplying them.
+
+So the search keeps its job and a second door is added beside it. Both doors
+open onto the same `intake()`: the same worktree checked out at the pull
+request, the same brief, the same summary, the same record. A record added by
+hand is a record, not a second kind of thing.
+
+- [x] **AC-AK1** A pull request link is read in every shape it arrives in: the
+      address bar's `https://github.com/owner/repo/pull/123`, the same with
+      `/files` or a `#discussion_r...` anchor or a query string still attached,
+      without its scheme, with `www.`, with a trailing slash, and with
+      whitespace around it. Verified by probe.
+- [x] **AC-AK2** The short form both `gh` and GitHub's own UI print,
+      `owner/repo#123`, is read too, as is `owner/repo/pull/123`. An owner
+      carrying a dot is not mistaken for a hostname. Verified by probe.
+- [x] **AC-AK3** Each refusal says which thing was wrong, because each has a
+      different fix: nothing pasted, an issue rather than a pull request,
+      another forge, or a string that is not a link at all. A refused paste
+      writes nothing: no record, no claim, no ledger line. Verified by probe.
+- [x] **AC-AK4** The control is a `+` beside the clock badge, opening one field
+      that takes the link and nothing else. A refusal leaves the text in place
+      to be corrected rather than retyped. Verified by construction.
+- [x] **AC-AK5** A pull request already in the inbox is not taken in twice. An
+      active record is reported and opened; a dismissed one is restored, which
+      is what asking for it back means. Verified by probe.
+- [x] **AC-AK6** The press answers before the launch finishes. A launch runs for
+      up to two minutes and the host abandons an RPC at thirty seconds, so the
+      daemon claims the key, answers, and launches behind the answer. The list
+      holds a place reading `Taking in owner/repo#123` until the record lands.
+      Verified by construction.
+- [x] **AC-AK7** A record added by hand runs the same intake as one GitHub
+      asked about. The only difference is the ledger line: it says the record
+      was `added by hand`, not that a review was requested, because the latter
+      would be untrue. Verified by construction.
+- [x] **AC-AK8** The key is claimed in `seenPullRequests` before the launch, so
+      a sweep running at the same moment on a pull request that is also review
+      requested cannot launch a second agent for it. A launch that throws before
+      writing its record gives the claim back. Verified by construction.
+- [x] **AC-AK9** Restoring through the add control is the same restore the row
+      offers, ledger line included. Verified by probe.
+- [ ] **AC-AK10** A link pasted on the Android phone is taken in: the field
+      accepts a paste, the placeholder appears, and the row replaces it when the
+      worktree is there. Awaiting the app.
+- [ ] **AC-AK11** A link to a pull request in a repository with no local clone
+      lands as an `unmapped` record carrying a Retry, the same as a swept one
+      does. Awaiting the app.
+
 ## Awaiting the app
 
 Every criterion below is built and typechecked. None can be ticked from here: each asserts
@@ -886,6 +940,8 @@ invocation command, so there is no route to them except the running app.
 | AC-AE10                        | One record taken in with the app open, watching the card fill before the next tick                              |
 | AC-AF27                        | One Run QA press made while a turn is open on the same agent                                                    |
 | AC-AJ4                         | One long press on the summary's risk line, on the Android phone                                                 |
+| AC-AK10                        | One link pasted into the add field on the Android phone                                                         |
+| AC-AK11                        | One link to a repository with no clone under a configured root                                                  |
 | AC-AF28                        | One Cancel press on the node that press left queued                                                             |
 | AC-AG9                         | Two presses made during one open turn, QA then verification                                                     |
 | AC-AH6, AC-AH7                 | One walk through a record whose findings share a line, typing in the box at each step                           |
