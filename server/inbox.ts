@@ -5,7 +5,7 @@ import {
   type IntakeRecord,
 } from "../shared/inbox";
 import { takingIn } from "./add";
-import { REVIEW_STAGES, reviewOf } from "../shared/review";
+import { AGENT_STAGES, reviewOf } from "../shared/review";
 import { workingAgents } from "./reconcile";
 import { loadConfig } from "./settings";
 import { loadState, updateState } from "./state";
@@ -26,11 +26,18 @@ import { summarising } from "./summary";
  * for the several minutes intake takes, which reads as a summary that is not
  * coming rather than one that has not arrived. AC-AD2.
  *
- * A record with a review stage running is left out. The same agent runs QA and
+ * A record with an agent stage under way is left out. The same agent runs QA and
  * verification when the settings give them no model of their own, so its status
  * cannot tell one turn from another: a QA run on a record that never got a
  * summary is not a summary arriving, and saying so would be a spinner that
  * never resolves. AC-AD7.
+ *
+ * Those two only, and only once they have started. Acknowledge and feedback are
+ * a `gh` call inside one RPC and never reach the agent, so neither says anything
+ * about what the agent is doing; a queued stage has not been sent yet, so the
+ * turn still running is the summary's. Testing every stage instead put the card
+ * back to an empty summary for as long as an acknowledge took, and for the whole
+ * of the turn a queued QA was waiting behind. AC-AM1.
  */
 function awaitingSummary(records: IntakeRecord[]): string[] {
   const live = workingAgents();
@@ -40,9 +47,10 @@ function awaitingSummary(records: IntakeRecord[]): string[] {
     if (record.summary) continue;
     if (!record.agentId || !live.has(record.agentId)) continue;
     const review = reviewOf(record);
-    const busy = REVIEW_STAGES.some(
-      (stage) => review[stage].status === "running",
-    );
+    const busy = AGENT_STAGES.some((stage) => {
+      const held = review[stage];
+      return held.status === "running" && !held.queuedAt;
+    });
     if (busy) continue;
     keys.add(record.key);
   }

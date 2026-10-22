@@ -63,6 +63,14 @@ const intake = [
   // Its agent is gone. Orphaned rather than created, so the reconciler leaves
   // it where it is and the question is only whether it reads as awaiting.
   record(7, { agentId: "gone", state: "orphaned" }),
+  // Acknowledging mid-summary. A `gh` reaction inside one RPC, never an agent
+  // turn, so it says nothing about what the agent is writing.
+  record(9, { review: { acknowledge: { status: "running", startedAt: new Date().toISOString() } } }),
+  // Submitting feedback mid-summary. Same shape, same answer.
+  record(10, { review: { feedback: { status: "running", startedAt: new Date().toISOString() } } }),
+  // QA pressed while the agent is mid-summary, so the press is queued behind it.
+  // The turn still running is the summary's, and it is minutes long.
+  record(11, { review: { qa: { status: "running", queuedAt: new Date().toISOString() } } }),
 ];
 
 write(intake);
@@ -72,6 +80,9 @@ agents([
   { id: "a3", status: "idle" },
   { id: "a4", status: "running" },
   { id: "a5", status: "running" },
+  { id: "a9", status: "running" },
+  { id: "a10", status: "running" },
+  { id: "a11", status: "running" },
 ]);
 
 const { reconcileAgents, workingAgents } = await import("../server/reconcile.ts");
@@ -104,7 +115,7 @@ check("AD-A3 idle is not", workingAgents().has("a3"), false);
 check("AD-A4 an agent absent from the list is not", workingAgents().has("gone"), false);
 
 // ---- B. What the screen is told is on its way. ------------------------------
-check("AD-B1 only the records whose summary is still being written", await awaiting(), ["o/r#1", "o/r#2"]);
+check("AD-B1 only the records whose summary is still being written", await awaiting(), ["o/r#1", "o/r#10", "o/r#11", "o/r#2", "o/r#9"]);
 
 const got = await awaiting();
 check("AD-B2 a stopped agent with nothing written is not awaited", got.includes("o/r#3"), false);
@@ -112,6 +123,10 @@ check("AD-B3 a summary already here is not awaited", got.includes("o/r#4"), fals
 check("AD-B4 a running review stage is not a summary arriving", got.includes("o/r#5"), false);
 check("AD-B5 a record with no agent is not awaited", got.includes("o/r#6"), false);
 check("AD-B6 a record whose agent is gone is not awaited", got.includes("o/r#7"), false);
+check("AM-1 acknowledging does not stop the summary spinner", got.includes("o/r#9"), true);
+check("AM-2 submitting feedback does not stop it either", got.includes("o/r#10"), true);
+check("AM-3 a queued QA has not been sent, so the turn running is the summary's", got.includes("o/r#11"), true);
+check("AM-4 a started QA still does stop it", got.includes("o/r#5"), false);
 
 // ---- C. The press, which the agent's status cannot see on its own. ---------
 /** A stand-in agent whose turn runs until the gate opens. */
