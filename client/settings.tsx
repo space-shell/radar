@@ -1,5 +1,9 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { useRpc, useSettings, type PluginSurfaceProps } from "@getpaseo/plugin/client";
+import {
+  useRpc,
+  useSettings,
+  type PluginSurfaceProps,
+} from "@getpaseo/plugin/client";
 import {
   SettingsAction,
   SettingsGroup,
@@ -12,6 +16,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
+import { useKeyboardAvoidance, type Measurable } from "./keyboard";
 import {
   DEFAULT_AGENT,
   TASKS,
@@ -76,7 +81,10 @@ function options(
   if (current === "" || listed.some((entry) => entry.value === current)) {
     return listed;
   }
-  return [...listed, { label: `${current} (not installed here)`, value: current }];
+  return [
+    ...listed,
+    { label: `${current} (not installed here)`, value: current },
+  ];
 }
 
 interface AgentPickerProps {
@@ -86,7 +94,12 @@ interface AgentPickerProps {
   onChange(spec: AgentSpec): void;
 }
 
-function AgentPicker({ spec, providers, disabled, onChange }: AgentPickerProps) {
+function AgentPicker({
+  spec,
+  providers,
+  disabled,
+  onChange,
+}: AgentPickerProps) {
   const provider = providers.find((entry) => entry.id === spec.provider);
   const model = provider?.models.find((entry) => entry.id === spec.model);
 
@@ -99,7 +112,9 @@ function AgentPicker({ spec, providers, disabled, onChange }: AgentPickerProps) 
         options={options(
           providers.map((entry) => ({
             id: entry.id,
-            label: entry.available ? entry.label : `${entry.label} (unavailable)`,
+            label: entry.available
+              ? entry.label
+              : `${entry.label} (unavailable)`,
           })),
           spec.provider,
         )}
@@ -164,6 +179,7 @@ interface TaskSectionProps {
   providers: ProviderOption[];
   theme: PluginTheme;
   onChange(values: RadarSettings): void;
+  onReveal(node: Measurable | null): void;
 }
 
 function TaskSection({
@@ -172,6 +188,7 @@ function TaskSection({
   providers,
   theme,
   onChange,
+  onReveal,
 }: TaskSectionProps) {
   const shipped = useShippedPrompt(task);
   const config = draft.tasks[task];
@@ -221,6 +238,7 @@ function TaskSection({
         }
         lines={10}
         theme={theme}
+        onReveal={onReveal}
         initialValue={config.prompt}
         placeholder={shipped.data?.text ?? "Loading the shipped brief"}
         onChangeText={(prompt) => setTask({ prompt })}
@@ -281,7 +299,9 @@ function Form(props: FormProps) {
       key={seed.count}
       values={seed.values}
       saved={props.values}
-      reseed={(values) => setSeed((current) => ({ count: current.count + 1, values }))}
+      reseed={(values) =>
+        setSeed((current) => ({ count: current.count + 1, values }))
+      }
     />
   );
 }
@@ -291,6 +311,9 @@ interface FieldsProps extends FormProps {
   saved: RadarSettings;
   reseed(values: RadarSettings): void;
 }
+
+/** The screen fills its host, and the keyboard takes its share of the bottom. */
+const FILL = { flex: 1 } as const;
 
 function Fields({
   values,
@@ -306,6 +329,16 @@ function Fields({
   const [draft, setDraft] = useState<RadarSettings>(values);
   const providers = useProviders();
   const legacy = useLegacy();
+  const {
+    inset,
+    rootRef,
+    viewportRef,
+    scrollRef,
+    onRootLayout,
+    onViewportLayout,
+    onScroll,
+    reveal,
+  } = useKeyboardAvoidance();
 
   const dirty = useMemo(
     () => JSON.stringify(draft) !== JSON.stringify(saved),
@@ -315,186 +348,219 @@ function Fields({
     setDraft((current) => ({ ...current, ...next }));
 
   const list = providers.data?.providers ?? [];
-  const agentCount = 1 + TASKS.filter((task) => needsOwnAgent(draft, task)).length;
+  const agentCount =
+    1 + TASKS.filter((task) => needsOwnAgent(draft, task)).length;
 
   return (
-    <ScrollView>
-      <SettingsGroup title="Radar">
-        <SettingsSection title="Intake">
-          <SettingsSwitch
-            label="Dry run"
-            hint="Logs the launch it would make and creates nothing. The safe state to leave a new machine in."
-            value={draft.dryRun}
-            onValueChange={(dryRun) => patch({ dryRun })}
-          />
-          <SettingsInput
-            label="Notification poll"
-            hint="Seconds between notification checks. GitHub's own X-Poll-Interval wins when it asks for longer."
-            initialValue={String(draft.notificationPollSeconds)}
-            onChangeText={(text) =>
-              patch({
-                notificationPollSeconds: asInt(
-                  text,
-                  draft.notificationPollSeconds,
-                ),
-              })
-            }
-          />
-          <SettingsInput
-            label="Full search"
-            hint="Seconds between full searches, which catch a review request that sent no notification."
-            initialValue={String(draft.searchIntervalSeconds)}
-            onChangeText={(text) =>
-              patch({
-                searchIntervalSeconds: asInt(text, draft.searchIntervalSeconds),
-              })
-            }
-          />
-          <SettingsInput
-            label="Checkout roots"
-            hint="Directories scanned for clones, comma separated. Every repository one level down is mapped by its origin."
-            initialValue={joinList(draft.checkoutRoots)}
-            onChangeText={(text) => patch({ checkoutRoots: splitList(text) })}
-          />
-          <SettingsInput
-            label="Development environment"
-            hint="The command that enters it, named in the prompt of every agent this plugin launches. Empty for none."
-            initialValue={draft.setupCommand ?? ""}
-            onChangeText={(text) =>
-              patch({ setupCommand: text.trim() === "" ? null : text })
-            }
-          />
-        </SettingsSection>
-
-        <SettingsSection
-          title="Agents"
-          info={
-            <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>
-              {agentCount === 1
-                ? "One agent per pull request."
-                : `${agentCount} agents per pull request, once every task has run.`}
-            </Text>
-          }
+    // A ten line brief with the save controls under it, on a screen whose only
+    // scroll is this one. AC-AL5.
+    <View
+      ref={rootRef}
+      onLayout={onRootLayout}
+      style={inset > 0 ? [FILL, { paddingBottom: inset }] : FILL}
+    >
+      <View ref={viewportRef} onLayout={onViewportLayout} style={FILL}>
+        <ScrollView
+          ref={scrollRef}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
         >
-          <SettingsRow
-            label="How these are counted"
-            hint="A task runs on intake's agent unless it is given a different model, so choosing the same model twice costs nothing. A task with its own model gets its own agent, in the pull request's own workspace, created the first time it runs."
-          />
-        </SettingsSection>
+          <SettingsGroup title="Radar">
+            <SettingsSection title="Intake">
+              <SettingsSwitch
+                label="Dry run"
+                hint="Logs the launch it would make and creates nothing. The safe state to leave a new machine in."
+                value={draft.dryRun}
+                onValueChange={(dryRun) => patch({ dryRun })}
+              />
+              <SettingsInput
+                label="Notification poll"
+                hint="Seconds between notification checks. GitHub's own X-Poll-Interval wins when it asks for longer."
+                initialValue={String(draft.notificationPollSeconds)}
+                onChangeText={(text) =>
+                  patch({
+                    notificationPollSeconds: asInt(
+                      text,
+                      draft.notificationPollSeconds,
+                    ),
+                  })
+                }
+              />
+              <SettingsInput
+                label="Full search"
+                hint="Seconds between full searches, which catch a review request that sent no notification."
+                initialValue={String(draft.searchIntervalSeconds)}
+                onChangeText={(text) =>
+                  patch({
+                    searchIntervalSeconds: asInt(
+                      text,
+                      draft.searchIntervalSeconds,
+                    ),
+                  })
+                }
+              />
+              <SettingsInput
+                label="Checkout roots"
+                hint="Directories scanned for clones, comma separated. Every repository one level down is mapped by its origin."
+                initialValue={joinList(draft.checkoutRoots)}
+                onChangeText={(text) =>
+                  patch({ checkoutRoots: splitList(text) })
+                }
+              />
+              <SettingsInput
+                label="Development environment"
+                hint="The command that enters it, named in the prompt of every agent this plugin launches. Empty for none."
+                initialValue={draft.setupCommand ?? ""}
+                onChangeText={(text) =>
+                  patch({ setupCommand: text.trim() === "" ? null : text })
+                }
+              />
+            </SettingsSection>
 
-        {TASKS.map((task) => (
-          <TaskSection
-            key={task}
-            task={task}
-            draft={draft}
-            providers={list}
-            theme={theme}
-            onChange={setDraft}
-          />
-        ))}
+            <SettingsSection
+              title="Agents"
+              info={
+                <Text
+                  style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}
+                >
+                  {agentCount === 1
+                    ? "One agent per pull request."
+                    : `${agentCount} agents per pull request, once every task has run.`}
+                </Text>
+              }
+            >
+              <SettingsRow
+                label="How these are counted"
+                hint="A task runs on intake's agent unless it is given a different model, so choosing the same model twice costs nothing. A task with its own model gets its own agent, in the pull request's own workspace, created the first time it runs."
+              />
+            </SettingsSection>
 
-        <SettingsSection title="Linear">
-          <SettingsInput
-            label="Workspace"
-            hint="The slug in a Linear URL. Empty turns the Linear half off."
-            initialValue={draft.linearWorkspace ?? ""}
-            onChangeText={(text) =>
-              patch({ linearWorkspace: text.trim() === "" ? null : text.trim() })
-            }
-          />
-          <SettingsInput
-            label="Team keys"
-            hint="Comma separated. A body naming ENG-1234 only becomes a link when ENG is listed here."
-            initialValue={joinList(draft.linearTeamKeys)}
-            onChangeText={(text) => patch({ linearTeamKeys: splitList(text) })}
-          />
-          <SettingsInput
-            label="API key command"
-            hint="The command that prints the key, as a command and its arguments separated by spaces. The key itself is never stored here, never logged and never shown back."
-            initialValue={joinList(draft.linearKeyCommand)}
-            onChangeText={(text) => patch({ linearKeyCommand: splitList(text) })}
-          />
-          <SettingsInput
-            label="Linear poll"
-            hint="Seconds between Linear notification checks."
-            initialValue={String(draft.linearPollSeconds)}
-            onChangeText={(text) =>
-              patch({ linearPollSeconds: asInt(text, draft.linearPollSeconds) })
-            }
-          />
-        </SettingsSection>
+            {TASKS.map((task) => (
+              <TaskSection
+                key={task}
+                task={task}
+                draft={draft}
+                providers={list}
+                theme={theme}
+                onChange={setDraft}
+                onReveal={reveal}
+              />
+            ))}
 
-        <SettingsSection title="Binaries">
-          <SettingsRow
-            label="Why these are here"
-            hint="A bare name is looked up on PATH, which is right when the daemon has one holding them. It does not reliably, so an absolute path belongs here rather than in the code."
-          />
-          <SettingsInput
-            label="paseo"
-            initialValue={draft.paseoPath}
-            onChangeText={(paseoPath) => patch({ paseoPath })}
-          />
-          <SettingsInput
-            label="gh"
-            initialValue={draft.ghPath}
-            onChangeText={(ghPath) => patch({ ghPath })}
-          />
-          <SettingsInput
-            label="git"
-            initialValue={draft.gitPath}
-            onChangeText={(gitPath) => patch({ gitPath })}
-          />
-        </SettingsSection>
+            <SettingsSection title="Linear">
+              <SettingsInput
+                label="Workspace"
+                hint="The slug in a Linear URL. Empty turns the Linear half off."
+                initialValue={draft.linearWorkspace ?? ""}
+                onChangeText={(text) =>
+                  patch({
+                    linearWorkspace: text.trim() === "" ? null : text.trim(),
+                  })
+                }
+              />
+              <SettingsInput
+                label="Team keys"
+                hint="Comma separated. A body naming ENG-1234 only becomes a link when ENG is listed here."
+                initialValue={joinList(draft.linearTeamKeys)}
+                onChangeText={(text) =>
+                  patch({ linearTeamKeys: splitList(text) })
+                }
+              />
+              <SettingsInput
+                label="API key command"
+                hint="The command that prints the key, as a command and its arguments separated by spaces. The key itself is never stored here, never logged and never shown back."
+                initialValue={joinList(draft.linearKeyCommand)}
+                onChangeText={(text) =>
+                  patch({ linearKeyCommand: splitList(text) })
+                }
+              />
+              <SettingsInput
+                label="Linear poll"
+                hint="Seconds between Linear notification checks."
+                initialValue={String(draft.linearPollSeconds)}
+                onChangeText={(text) =>
+                  patch({
+                    linearPollSeconds: asInt(text, draft.linearPollSeconds),
+                  })
+                }
+              />
+            </SettingsSection>
 
-        {legacy.data?.values ? (
-          <SettingsSection title="The old config.json">
-            <SettingsAction
-              label="Import it"
-              hint={`${legacy.data.path} is what this plugin acts on until something is saved here. Importing copies it in, after which this file is ignored.`}
-              actionLabel="Import"
-              disabled={saving}
-              onPress={() => {
-                const parsed = radarSettings.schema.safeParse(legacy.data?.values);
-                if (parsed.success) reseed(parsed.data);
-              }}
-            />
-          </SettingsSection>
-        ) : null}
+            <SettingsSection title="Binaries">
+              <SettingsRow
+                label="Why these are here"
+                hint="A bare name is looked up on PATH, which is right when the daemon has one holding them. It does not reliably, so an absolute path belongs here rather than in the code."
+              />
+              <SettingsInput
+                label="paseo"
+                initialValue={draft.paseoPath}
+                onChangeText={(paseoPath) => patch({ paseoPath })}
+              />
+              <SettingsInput
+                label="gh"
+                initialValue={draft.ghPath}
+                onChangeText={(ghPath) => patch({ ghPath })}
+              />
+              <SettingsInput
+                label="git"
+                initialValue={draft.gitPath}
+                onChangeText={(gitPath) => patch({ gitPath })}
+              />
+            </SettingsSection>
 
-        <SettingsSection title="Saving">
-          {saveError ? (
-            <SettingsRow label="The last save failed" error={saveError} />
-          ) : null}
-          {providers.data?.error ? (
-            <SettingsRow
-              label="The provider list is short"
-              error={providers.data.error}
-            />
-          ) : null}
-          <SettingsAction
-            label="Save"
-            hint={dirty ? "Unsaved changes." : "Nothing to save."}
-            actionLabel={saving ? "Saving" : "Save"}
-            disabled={!dirty || saving}
-            onPress={() => void save(draft, revision)}
-          />
-          <SettingsAction
-            label="Discard"
-            hint="Puts every field back to what is saved."
-            actionLabel="Discard"
-            disabled={!dirty || saving}
-            onPress={() => reseed(saved)}
-          />
-          <SettingsAction
-            label="Reset everything"
-            hint="Back to the defaults, which is a dry run that creates nothing."
-            actionLabel="Reset"
-            disabled={saving}
-            onPress={() => void reset()}
-          />
-        </SettingsSection>
-      </SettingsGroup>
-    </ScrollView>
+            {legacy.data?.values ? (
+              <SettingsSection title="The old config.json">
+                <SettingsAction
+                  label="Import it"
+                  hint={`${legacy.data.path} is what this plugin acts on until something is saved here. Importing copies it in, after which this file is ignored.`}
+                  actionLabel="Import"
+                  disabled={saving}
+                  onPress={() => {
+                    const parsed = radarSettings.schema.safeParse(
+                      legacy.data?.values,
+                    );
+                    if (parsed.success) reseed(parsed.data);
+                  }}
+                />
+              </SettingsSection>
+            ) : null}
+
+            <SettingsSection title="Saving">
+              {saveError ? (
+                <SettingsRow label="The last save failed" error={saveError} />
+              ) : null}
+              {providers.data?.error ? (
+                <SettingsRow
+                  label="The provider list is short"
+                  error={providers.data.error}
+                />
+              ) : null}
+              <SettingsAction
+                label="Save"
+                hint={dirty ? "Unsaved changes." : "Nothing to save."}
+                actionLabel={saving ? "Saving" : "Save"}
+                disabled={!dirty || saving}
+                onPress={() => void save(draft, revision)}
+              />
+              <SettingsAction
+                label="Discard"
+                hint="Puts every field back to what is saved."
+                actionLabel="Discard"
+                disabled={!dirty || saving}
+                onPress={() => reseed(saved)}
+              />
+              <SettingsAction
+                label="Reset everything"
+                hint="Back to the defaults, which is a dry run that creates nothing."
+                actionLabel="Reset"
+                disabled={saving}
+                onPress={() => void reset()}
+              />
+            </SettingsSection>
+          </SettingsGroup>
+        </ScrollView>
+      </View>
+    </View>
   );
 }
 
