@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { pullRequestUrl, unseen, type IntakeRecord } from "../shared/inbox";
 import { viewMachine } from "../shared/machines/view";
+import { AddPullRequest } from "./add";
 import { ConfirmButton } from "./confirm";
 import { Detail } from "./detail";
 import { BusyDots, dotsWidth } from "./spinner";
@@ -85,6 +86,18 @@ function styleSheet(theme: PluginTheme, compact: boolean) {
       fontWeight: "600" as const,
     },
     row: { gap: 4, paddingVertical: 12 },
+    /**
+     * Where the row will be. A launch takes up to two minutes, so a press with
+     * nothing on the screen to show for it reads as a press that did nothing.
+     * AC-AK6.
+     */
+    taking: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 8,
+      paddingVertical: 12,
+    },
+    takingText: { color: colors.foregroundMuted, fontSize: compact ? 15 : 16 },
     metaRow: {
       flexDirection: "row" as const,
       alignItems: "center" as const,
@@ -134,6 +147,12 @@ export function Inbox({
   const retryingKeys = useRetryingKeys();
   const dismissingKeys = useDismissingKeys();
   const [showDismissed, setShowDismissed] = useState(false);
+  const [adding, setAdding] = useState(false);
+  /**
+   * The key of a pull request added by hand whose launch has not landed yet.
+   * Held here rather than in the field, which closes on the press.
+   */
+  const [takingIn, setTakingIn] = useState<string | null>(null);
 
   /**
    * Which of the three views is on screen, and the record it is about. One value,
@@ -165,6 +184,23 @@ export function Inbox({
   };
 
   const records = data?.records ?? [];
+  // The launch landed, so the real row takes the placeholder's place. An effect
+  // rather than a render time filter, because the list below reads the state.
+  useEffect(() => {
+    if (takingIn && records.some((record) => record.key === takingIn))
+      setTakingIn(null);
+  }, [records, takingIn]);
+
+  /**
+   * The floor under the placeholder. A launch is capped at two minutes and
+   * always writes its record, so this only fires when the daemon died holding
+   * the work, and a spinner that spins for ever is worse than one that stops.
+   */
+  useEffect(() => {
+    if (!takingIn) return;
+    const timer = setTimeout(() => setTakingIn(null), 5 * 60 * 1000);
+    return () => clearTimeout(timer);
+  }, [takingIn]);
   const active = records.filter((record) => !record.dismissedAt);
   const dismissed = records
     .filter((record) => record.dismissedAt)
@@ -363,6 +399,15 @@ export function Inbox({
           ) : null}
           <Pressable
             accessibilityRole="button"
+            accessibilityState={{ expanded: adding }}
+            accessibilityLabel="Add a pull request by link"
+            onPress={() => setAdding(!adding)}
+            style={styles.badge}
+          >
+            <Text style={styles.badgeGlyph}>{adding ? "\u00D7" : "+"}</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
             accessibilityLabel={
               data?.lastSearchAt
                 ? `Last swept ${age(data.lastSearchAt)}. Sweep now`
@@ -398,12 +443,33 @@ export function Inbox({
         </View>
       </View>
 
+      {adding ? (
+        <AddPullRequest
+          theme={theme}
+          onTakingIn={(key) => {
+            setTakingIn(key);
+            setShowDismissed(false);
+          }}
+          onPresent={(key) => {
+            setShowDismissed(false);
+            go({ type: "OPEN_DETAIL", key });
+          }}
+          onClose={() => setAdding(false)}
+        />
+      ) : null}
+
       {error ? (
         <Prose style={styles.failureBanner}>Unavailable: {String(error)}</Prose>
       ) : null}
 
       <ScrollView>
-        {shown.length === 0 ? (
+        {takingIn && !showDismissed ? (
+          <View style={styles.taking}>
+            <BusyDots theme={theme} label={`Taking in ${takingIn}`} size={3} />
+            <Text style={styles.takingText}>Taking in {takingIn}</Text>
+          </View>
+        ) : null}
+        {shown.length === 0 && !takingIn ? (
           <Text style={styles.empty}>
             {showDismissed
               ? "Nothing dismissed."

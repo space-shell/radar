@@ -190,6 +190,30 @@ export const retryIntake = defineRpc({
   }),
 });
 
+/**
+ * Takes in a pull request James named, rather than one GitHub asked him about.
+ *
+ * The input is whatever he pasted. Parsing happens on the daemon, not here,
+ * because the same string has to be read the same way whichever surface sent
+ * it, and because the reason a paste was refused is worth writing once.
+ *
+ * `ok` means the record was claimed and the launch has begun, not that the
+ * worktree exists: a launch runs for up to two minutes and the host abandons an
+ * RPC at thirty seconds. The row appears when the launch lands. AC-AK6.
+ */
+export const addPullRequest = defineRpc({
+  name: "radar.inbox.add",
+  input: z.object({ link: z.string() }),
+  output: z.object({
+    ok: z.boolean(),
+    error: z.string().optional(),
+    /** The record key, whether it was claimed now or was already there. */
+    key: z.string().optional(),
+    /** Already taken in: "present", or "restored" when it had been dismissed. */
+    already: z.enum(["present", "restored"]).optional(),
+  }),
+});
+
 export const setDismissed = defineRpc({
   name: "radar.inbox.dismiss",
   input: z.object({ key: z.string(), dismissed: z.boolean() }),
