@@ -62,24 +62,11 @@ export interface GraphqlResponse<T> {
   errors: { message: string }[];
 }
 
-/**
- * One GraphQL read, sharing the token and the deadline with `call`.
- *
- * Reads only. The document is refused unless it opens with `query`, so this cannot
- * quietly become a second write path: every outward GitHub write still goes
- * through `call`, which is what keeps AC-I1 and AC-I2 checkable by reading this
- * one file.
- *
- * Partial failures are returned rather than thrown. One pull request deleted out
- * from under the inbox must not cost the other forty their status.
- */
-export async function graphql<T>(
+/** The transport both GraphQL helpers share. Neither is reachable without one. */
+async function send<T>(
   document: string,
+  variables: Record<string, unknown>,
 ): Promise<GraphqlResponse<T>> {
-  if (!document.trimStart().startsWith("query")) {
-    throw new Error("the GraphQL helper takes queries only");
-  }
-
   const controller = new AbortController();
   const deadline = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
@@ -92,7 +79,7 @@ export async function graphql<T>(
         "Content-Type": "application/json",
         "X-GitHub-Api-Version": "2022-11-28",
       },
-      body: JSON.stringify({ query: document }),
+      body: JSON.stringify({ query: document, variables }),
     });
 
     if (response.status === 401) forgetToken();
@@ -114,6 +101,53 @@ export async function graphql<T>(
   } finally {
     clearTimeout(deadline);
   }
+}
+
+/**
+ * One GraphQL read, sharing the token and the deadline with `call`.
+ *
+ * Reads only. The document is refused unless it opens with `query`, and `mutate`
+ * refuses anything that is not a `mutation`, so which of the two a document is
+ * cannot be decided by the caller getting it wrong.
+ *
+ * Partial failures are returned rather than thrown. One pull request deleted out
+ * from under the inbox must not cost the other forty their status.
+ */
+export function graphql<T>(
+  document: string,
+  variables: Record<string, unknown> = {},
+): Promise<GraphqlResponse<T>> {
+  if (!document.trimStart().startsWith("query")) {
+    throw new Error("the GraphQL helper takes queries only");
+  }
+  return send<T>(document, variables);
+}
+
+/**
+ * One GraphQL write, for the things REST has no endpoint for.
+ *
+ * The second outward write path, and the reason it exists is `resolveReviewThread`:
+ * resolving a review thread is a GraphQL mutation and nothing else. It lives here
+ * beside `call` rather than inside `server/threads.ts` so AC-I1 and AC-I2 stay
+ * checkable by reading one file: every request that changes something on GitHub is
+ * either `call` or this.
+ *
+ * Errors are thrown rather than returned. A mutation has one subject, so a partial
+ * failure is a failure, and the caller has a press to answer.
+ */
+export async function mutate<T>(
+  document: string,
+  variables: Record<string, unknown> = {},
+): Promise<T> {
+  if (!document.trimStart().startsWith("mutation")) {
+    throw new Error("the GraphQL write helper takes mutations only");
+  }
+  const { data, errors } = await send<T>(document, variables);
+  if (errors.length > 0) {
+    throw new Error(errors.map((entry) => entry.message).join("; "));
+  }
+  if (!data) throw new Error("GitHub returned no data");
+  return data;
 }
 
 /** The message GitHub sent, for a failure James has to act on rather than a code. */

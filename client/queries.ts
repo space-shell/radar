@@ -27,6 +27,7 @@ import {
   sweepNow,
   undoStageAction,
 } from "../shared/inbox";
+import { readThreads, setThreadResolved } from "../shared/threads";
 import { AGENT_STAGES, STAGE_LABELS, type ReviewStage } from "../shared/review";
 import { shortKey } from "../shared/format";
 
@@ -40,6 +41,8 @@ const SUMMARY_MUTATION = ["radar", "summary"];
 const SWEEP_MUTATION = ["radar", "sweep"];
 const ADD_MUTATION = ["radar", "add"];
 const feedbackQuery = (key: string) => ["radar", "feedback", key];
+const threadsQuery = (key: string) => ["radar", "threads", key];
+const THREAD_MUTATION = ["radar", "thread"];
 
 export interface DismissInput {
   key: string;
@@ -453,5 +456,76 @@ export function useSubmitReview(key: string, refresh: () => void) {
       void queryClient.invalidateQueries({ queryKey: feedbackQuery(key) });
       refresh();
     },
+  });
+}
+
+/**
+ * The pull request's review threads, read live.
+ *
+ * Nothing is stored for these, so there is no cache to go stale against: the
+ * query is the read. It does not refetch on focus for the same reason the
+ * feedback query does not, which is that a list reordering under a half armed
+ * Resolve press would resolve the wrong thread.
+ */
+export function useThreads(key: string) {
+  const read = useRpc(readThreads);
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    queryKey: threadsQuery(key),
+    queryFn: () => read({ key }),
+    refetchOnWindowFocus: false,
+  });
+
+  return {
+    ...query,
+    refresh: () =>
+      queryClient.invalidateQueries({ queryKey: threadsQuery(key) }),
+  };
+}
+
+export interface ThreadInput {
+  id: string;
+  resolved: boolean;
+  /** What the toast calls it, so a failure names the file rather than a node id. */
+  label: string;
+}
+
+/** An outward GitHub write, so it is a confirm press on the screen. AC-AP8. */
+export function useResolveThread(key: string) {
+  const resolve = useRpc(setThreadResolved);
+  const queryClient = useQueryClient();
+  const toast = useToast();
+
+  return useMutation({
+    mutationKey: THREAD_MUTATION,
+    mutationFn: (input: ThreadInput) =>
+      resolve({ key, id: input.id, resolved: input.resolved }),
+    onSuccess: (result, input) => {
+      const verb = input.resolved ? "resolve" : "reopen";
+      if (!result.ok) {
+        toast.error(
+          `Could not ${verb} ${input.label}: ${result.error ?? "no reason given"}`,
+        );
+        return;
+      }
+      toast.show(`${input.label} ${input.resolved ? "resolved" : "reopened"}`, {
+        variant: "success",
+      });
+    },
+    onError: (caught, input) =>
+      toast.error(
+        `Could not ${input.resolved ? "resolve" : "reopen"} ${input.label}: ${String(caught)}`,
+      ),
+    onSettled: () =>
+      void queryClient.invalidateQueries({ queryKey: threadsQuery(key) }),
+  });
+}
+
+/** Which threads have a write in flight, so each row can show its own. R5. */
+export function useResolvingThreads(): (string | undefined)[] {
+  return useMutationState({
+    filters: { mutationKey: THREAD_MUTATION, status: "pending" },
+    select: (mutation: Mutation<unknown, Error, ThreadInput>) =>
+      mutation.state.variables?.id,
   });
 }

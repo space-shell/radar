@@ -21,6 +21,7 @@ import {
 } from "../shared/review";
 import { stageEvents, type StageEvent } from "../shared/machines/stage";
 import { statusWord } from "../shared/appearance";
+import { roundsOf } from "../shared/feedback";
 import { ConfirmButton } from "./confirm";
 import { Prose } from "./prose";
 import { age, issueKey, recordMeta } from "../shared/format";
@@ -54,6 +55,8 @@ export interface DetailProps {
   onBack(): void;
   /** Opens the feedback wizard, which is a third view of this screen. D6. */
   onOpenWizard(): void;
+  /** Opens the review threads, the fourth. They are GitHub's, not the draft's. */
+  onOpenThreads(): void;
   /**
    * Which node is expanded, and the press that changes it. Held by the screen
    * rather than here: this view unmounts on the way to the wizard, so a node
@@ -227,6 +230,7 @@ export function Detail({
   navigation,
   onBack,
   onOpenWizard,
+  onOpenThreads,
   openNode,
   onExpand,
 }: DetailProps) {
@@ -281,6 +285,9 @@ export function Detail({
   }
 
   const current = currentNode(record);
+  // How many reviews have already gone out. It changes what Reopen is called on
+  // the feedback node, and whether the threads press is worth offering. AC-AP11.
+  const rounds = roundsOf(record.feedback).length;
   const { agentId, workspaceId } = record;
   const openAgent = navigation?.openAgent;
   const openWorkspace = navigation?.openWorkspace;
@@ -349,10 +356,15 @@ export function Detail({
         busyKey: `${record.key}:${node}:undo`,
         run: act(node, "undo"),
       },
+      // Named for what it does on this node rather than for the transition. On
+      // feedback with a round already sent, reopening is starting the next round:
+      // the server archives the one that went out and empties the draft, and
+      // "Reopen" read as undoing the review that is already on GitHub. AC-AP11.
       REOPEN: {
-        label: "Reopen",
-        confirmLabel: "Reopen?",
-        busyLabel: "Reopening",
+        label: rounds > 0 && node === "feedback" ? "Review again" : "Reopen",
+        confirmLabel:
+          rounds > 0 && node === "feedback" ? "Review again?" : "Reopen?",
+        busyLabel: rounds > 0 && node === "feedback" ? "Opening" : "Reopening",
         busyKey: `${record.key}:${node}:pending`,
         run: moveStage(node, "pending"),
       },
@@ -543,17 +555,30 @@ export function Detail({
                           takes a plain press rather than a confirm. The one
                           outward press lives inside it. AC-G9. */}
                       {node === "feedback" ? (
-                        <Pressable
-                          accessibilityRole="button"
-                          accessibilityLabel={`Open the feedback wizard for ${record.key}`}
-                          onPress={onOpenWizard}
-                        >
-                          <Text style={styles.link}>
-                            {status === "done"
-                              ? "Open the review"
-                              : STAGE_ACTIONS.feedback}
-                          </Text>
-                        </Pressable>
+                        <>
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel={`Open the feedback wizard for ${record.key}`}
+                            onPress={onOpenWizard}
+                          >
+                            <Text style={styles.link}>
+                              {status === "done"
+                                ? "Open the review"
+                                : STAGE_ACTIONS.feedback}
+                            </Text>
+                          </Pressable>
+                          {/* Offered whatever the stage says, because a thread
+                              can be opened by anyone at any point: the author
+                              replying to a comment from round one is exactly
+                              when this is wanted, and that is not a stage. */}
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel={`Open the review threads for ${record.key}`}
+                            onPress={onOpenThreads}
+                          >
+                            <Text style={styles.link}>Review threads</Text>
+                          </Pressable>
+                        </>
                       ) : null}
                       {openAgent && nodeAgent && spawnable(node) ? (
                         <Pressable

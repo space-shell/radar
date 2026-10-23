@@ -168,7 +168,7 @@ function arm() {
   check("M9 and fires nothing", fired.length, 0);
 }
 
-/** The inbox screen's three views, started with or without a record named. */
+/** The inbox screen's four views, started with or without a record named. */
 function screen(key = null) {
   const actor = createActor(viewMachine, { input: { key } });
   actor.start();
@@ -176,7 +176,10 @@ function screen(key = null) {
   const on = () => actor.getSnapshot().context.key;
   const open = () => actor.getSnapshot().context.node;
   // Variadic, because `actor.send` takes one event and silently drops the rest.
-  const send = (...events) => { for (const event of events) actor.send(event); return actor; };
+  const send = (...events) => {
+    for (const event of events) actor.send(event);
+    return actor;
+  };
   return { actor, at, on, open, send };
 }
 
@@ -270,11 +273,51 @@ function screen(key = null) {
   walk([]);
   walk([{ type: "OPEN_DETAIL", key: "o/r#9" }]);
   walk([{ type: "OPEN_DETAIL", key: "o/r#9" }, { type: "OPEN_WIZARD" }]);
+  walk([{ type: "OPEN_DETAIL", key: "o/r#9" }, { type: "OPEN_THREADS" }]);
   check("V9 every view is reachable", [...reached].sort(), [
     "detail",
     "list",
+    "threads",
     "wizard",
   ]);
+}
+
+// AP10. The threads view sits beside the wizard rather than inside it: resolving
+// is an immediate GitHub write, and the wizard's contract is that nothing
+// reaches GitHub until its own last press.
+{
+  const { actor, at } = screen();
+  actor.send({ type: "OPEN_THREADS" });
+  check("AP10 threads cannot be opened from the list", at(), "list");
+}
+{
+  const { at, on, send } = screen("o/r#13");
+  send({ type: "OPEN_THREADS" });
+  check("AP10 threads open from a detail", at(), "threads");
+  check("AP10 on the record the detail was on", on(), "o/r#13");
+  send({ type: "PARAM", key: "o/r#14" });
+  check(
+    "AP10 a record named elsewhere is ignored",
+    [at(), on()],
+    ["threads", "o/r#13"],
+  );
+  send({ type: "OPEN_WIZARD" });
+  check("AP10 and the wizard is not reachable from here", at(), "threads");
+  send({ type: "BACK" });
+  check("AP10 back returns to the detail", [at(), on()], ["detail", "o/r#13"]);
+}
+{
+  const { at, open, send } = screen();
+  send(
+    { type: "OPEN_DETAIL", key: "o/r#15" },
+    { type: "EXPAND", node: "feedback" },
+  );
+  send({ type: "OPEN_THREADS" }, { type: "BACK" });
+  check(
+    "AP10 the map comes back as it was left",
+    [at(), open()],
+    ["detail", "feedback"],
+  );
 }
 
 // V10. The expanded map node. It belongs to the screen because the detail view
@@ -291,9 +334,17 @@ function screen(key = null) {
   send({ type: "EXPAND", node: "qa" });
   check("V10 the same node again closes it", open(), null);
   send({ type: "EXPAND", node: "feedback" }, { type: "OPEN_WIZARD" });
-  check("V10 the wizard does not disturb it", [at(), open()], ["wizard", "feedback"]);
+  check(
+    "V10 the wizard does not disturb it",
+    [at(), open()],
+    ["wizard", "feedback"],
+  );
   send({ type: "BACK" });
-  check("V10 and the map comes back as it was left", [at(), open()], ["detail", "feedback"]);
+  check(
+    "V10 and the map comes back as it was left",
+    [at(), open()],
+    ["detail", "feedback"],
+  );
 }
 
 // V11. A different record is a different map, so what was open does not carry.
@@ -475,19 +526,41 @@ function wizard() {
 
 // W11. A review already sent. No step event can reopen the walk, which is the
 // rule that stops a second review going out. AC-G15.
+//
+// Amended by group AP: `READY` does leave this state, because a round reopened
+// on the server is the press that deliberately started another one. The rule
+// AC-G15 states is about the step events, and it still holds.
 {
   const w = wizard();
   w.ready(previewStepOf(1), 1);
   w.send({ type: "SUBMITTED" });
   check("W11 submitted is where it ends", w.at(), "submitted");
-  w.send(
-    { type: "PREV" },
-    { type: "NEXT" },
-    { type: "READY", step: 0, findings: 1 },
-  );
-  check("W11 and nothing walks out of it", w.at(), "submitted");
+  w.send({ type: "PREV" }, { type: "NEXT" }, { type: "RECOUNT", findings: 3 });
+  check("W11 and no step event walks out of it", w.at(), "submitted");
   check("W11 writing nothing further to the draft", w.saved, []);
   check("W11 and asking GitHub nothing further", w.checked.count, 1);
+}
+
+// AP9. A round reopened on the server. The screen resumes the walk on the fresh
+// draft, at its step rather than at the one the last round ended on.
+{
+  const w = wizard();
+  w.ready(previewStepOf(2), 2);
+  w.send({ type: "SUBMITTED" });
+  check("AP9 the receipt is showing", w.at(), "submitted");
+  w.send({ type: "READY", step: 0, findings: 2 });
+  check("AP9 READY resumes the walk", w.at(), "finding");
+  check("AP9 on the fresh draft's step", w.step(), 0);
+  check("AP9 without writing the step back", w.saved, []);
+}
+
+// AP9. The findings file went missing between the round that went out and the
+// reopen. The receipt gives way to the explanation rather than to an empty walk.
+{
+  const w = wizard();
+  w.ready(previewStepOf(1), 1);
+  w.send({ type: "SUBMITTED" }, { type: "UNAVAILABLE" });
+  check("AP9 an unreadable file leaves the receipt", w.at(), "unavailable");
 }
 
 // W12. A review submitted before the screen opened at all, which is the state
@@ -558,9 +631,17 @@ function wizard() {
 {
   const w = wizard();
   w.ready(2, 5);
-  check("W16 walking the third of five findings", [w.at(), w.step()], ["finding", 2]);
+  check(
+    "W16 walking the third of five findings",
+    [w.at(), w.step()],
+    ["finding", 2],
+  );
   w.send({ type: "RECOUNT", findings: 1 });
-  check("W16 a list of one leaves the step on the preview", [w.at(), w.step()], ["preview", 2]);
+  check(
+    "W16 a list of one leaves the step on the preview",
+    [w.at(), w.step()],
+    ["preview", 2],
+  );
   check("W16 and the clamp is written through to the draft", w.saved, [2]);
 }
 
@@ -569,14 +650,34 @@ function wizard() {
 {
   const w = wizard();
   w.ready(1, 1);
-  check("W17 on the verification step of one finding", [w.at(), w.step()], ["verification", 1]);
+  check(
+    "W17 on the verification step of one finding",
+    [w.at(), w.step()],
+    ["verification", 1],
+  );
   w.send({ type: "RECOUNT", findings: 4 });
-  check("W17 four findings makes the same step a finding", [w.at(), w.step()], ["finding", 1]);
+  check(
+    "W17 four findings makes the same step a finding",
+    [w.at(), w.step()],
+    ["finding", 1],
+  );
   w.send({ type: "NEXT" }, { type: "NEXT" }, { type: "NEXT" });
-  check("W17 and verification moved out to step four", [w.at(), w.step()], ["verification", 4]);
+  check(
+    "W17 and verification moved out to step four",
+    [w.at(), w.step()],
+    ["verification", 4],
+  );
   w.send({ type: "NEXT" });
-  check("W17 and the walk now runs to the new end", [w.at(), w.step()], ["preview", 5]);
-  check("W17 with no further step past it", w.send({ type: "NEXT" }).getSnapshot().context.step, 5);
+  check(
+    "W17 and the walk now runs to the new end",
+    [w.at(), w.step()],
+    ["preview", 5],
+  );
+  check(
+    "W17 with no further step past it",
+    w.send({ type: "NEXT" }).getSnapshot().context.step,
+    5,
+  );
 }
 
 // W18. A count that did not change still re-dispatches, because the component
@@ -585,12 +686,19 @@ function wizard() {
   const w = wizard();
   w.ready(0, 3);
   w.send({ type: "RECOUNT", findings: 3 });
-  check("W18 an unchanged count leaves the screen alone", [w.at(), w.step()], ["finding", 0]);
+  check(
+    "W18 an unchanged count leaves the screen alone",
+    [w.at(), w.step()],
+    ["finding", 0],
+  );
 }
 
 // W19. Neither terminal screen moves for a recount.
 {
-  for (const [opening, where] of [[{ type: "SUBMITTED" }, "submitted"], [{ type: "UNAVAILABLE" }, "unavailable"]]) {
+  for (const [opening, where] of [
+    [{ type: "SUBMITTED" }, "submitted"],
+    [{ type: "UNAVAILABLE" }, "unavailable"],
+  ]) {
     const w = wizard();
     w.send(opening, { type: "RECOUNT", findings: 9 });
     check(`W19 ${where} ignores a recount`, w.at(), where);
@@ -812,7 +920,11 @@ function recordWith(stage, status, laterMoved, earlier = "settled") {
   check(
     "AF23 a started running stage still offers nothing",
     stageEvents(
-      { review: { qa: { status: "running", startedAt: "2026-10-20T08:00:00Z" } } },
+      {
+        review: {
+          qa: { status: "running", startedAt: "2026-10-20T08:00:00Z" },
+        },
+      },
       "qa",
     ),
     [],
@@ -866,7 +978,14 @@ function recordWith(stage, status, laterMoved, earlier = "settled") {
     },
   };
   const look = (status) => nodeAppearance(status, theme);
-  const statuses = ["pending", "queued", "running", "done", "skipped", "failed"];
+  const statuses = [
+    "pending",
+    "queued",
+    "running",
+    "done",
+    "skipped",
+    "failed",
+  ];
 
   check(
     "AF25 no two statuses share a glyph",
@@ -914,8 +1033,14 @@ function recordWith(stage, status, laterMoved, earlier = "settled") {
       feedback: { status: "pending" },
     },
   });
-  const running = behind({ status: "running", startedAt: "2026-10-21T08:00:00Z" });
-  const queued = behind({ status: "running", queuedAt: "2026-10-21T08:00:00Z" });
+  const running = behind({
+    status: "running",
+    startedAt: "2026-10-21T08:00:00Z",
+  });
+  const queued = behind({
+    status: "running",
+    queuedAt: "2026-10-21T08:00:00Z",
+  });
 
   check(
     "AG1 QA still holds the title of current node while it runs",
@@ -924,10 +1049,7 @@ function recordWith(stage, status, laterMoved, earlier = "settled") {
   );
   check(
     "AG1 and verification, which is not current, is offered anyway",
-    [
-      stageEvents(running, "verification"),
-      stageEvents(queued, "verification"),
-    ],
+    [stageEvents(running, "verification"), stageEvents(queued, "verification")],
     [
       ["RUN", "SKIP"],
       ["RUN", "SKIP"],
@@ -935,7 +1057,10 @@ function recordWith(stage, status, laterMoved, earlier = "settled") {
   );
   check(
     "AG1 because every stage before it has left pending",
-    [stageBlocked(running, "verification"), stageBlocked(queued, "verification")],
+    [
+      stageBlocked(running, "verification"),
+      stageBlocked(queued, "verification"),
+    ],
     [false, false],
   );
   // A skipped or failed QA counts as having left pending just as a done one
@@ -1025,7 +1150,11 @@ function recordWith(stage, status, laterMoved, earlier = "settled") {
       }
     }
   }
-  check("AG3 the currency rule offered nothing the new rule does not", lost, []);
+  check(
+    "AG3 the currency rule offered nothing the new rule does not",
+    lost,
+    [],
+  );
 }
 
 // AG5. The word under the node reads off the same rule the controls do. Split
@@ -1064,7 +1193,11 @@ function recordWith(stage, status, laterMoved, earlier = "settled") {
       }
     }
   }
-  check("AG5 so no pending node reads waiting under a control", contradicted, []);
+  check(
+    "AG5 so no pending node reads waiting under a control",
+    contradicted,
+    [],
+  );
 }
 
 // AG8. The one line summary under a record. It said `created · Quartr-App/web ·
@@ -1079,10 +1212,17 @@ function recordWith(stage, status, laterMoved, earlier = "settled") {
     firstSeen: new Date(Date.now() - 3 * 3_600_000).toISOString(),
     state: "created",
   };
-  check("AG8 an ordinary record says its age and nothing else", recordMeta(record), "3h ago");
+  check(
+    "AG8 an ordinary record says its age and nothing else",
+    recordMeta(record),
+    "3h ago",
+  );
   check(
     "AG8 naming neither the repository nor the word created",
-    [recordMeta(record).includes("o/r"), recordMeta(record).includes("created")],
+    [
+      recordMeta(record).includes("o/r"),
+      recordMeta(record).includes("created"),
+    ],
     [false, false],
   );
   check(
@@ -1206,9 +1346,10 @@ const seedRecord = async (record) => {
   );
   check(
     "R3 and the map never offers it",
-    stageEvents(recordWith("acknowledge", "pending", false), "acknowledge").includes(
-      "SKIP",
-    ),
+    stageEvents(
+      recordWith("acknowledge", "pending", false),
+      "acknowledge",
+    ).includes("SKIP"),
     false,
   );
 }
@@ -1226,9 +1367,17 @@ const seedRecord = async (record) => {
   check(
     "R4 and the map never offers it, reached or not",
     [
-      stageEvents(recordWith("feedback", "pending", false, "settled"), "feedback"),
-      stageEvents(recordWith("feedback", "failed", false, "settled"), "feedback"),
-    ].flat().includes("SKIP"),
+      stageEvents(
+        recordWith("feedback", "pending", false, "settled"),
+        "feedback",
+      ),
+      stageEvents(
+        recordWith("feedback", "failed", false, "settled"),
+        "feedback",
+      ),
+    ]
+      .flat()
+      .includes("SKIP"),
     false,
   );
   check(
@@ -1316,19 +1465,49 @@ const seedRecord = async (record) => {
     },
   };
 
-  check("AI1 the strip is the review stages", [...REVIEW_STAGES], ["acknowledge", "qa", "verification", "feedback"]);
-  check("AI1 and says nothing about dismissing", REVIEW_STAGES.includes("dismiss"), false);
-  check("AI2 the map still ends on dismiss", [...MAP_NODES], [...REVIEW_STAGES, "dismiss"]);
-  check("AI2 which is where the control is", MAP_NODES.length, REVIEW_STAGES.length + 1);
+  check(
+    "AI1 the strip is the review stages",
+    [...REVIEW_STAGES],
+    ["acknowledge", "qa", "verification", "feedback"],
+  );
+  check(
+    "AI1 and says nothing about dismissing",
+    REVIEW_STAGES.includes("dismiss"),
+    false,
+  );
+  check(
+    "AI2 the map still ends on dismiss",
+    [...MAP_NODES],
+    [...REVIEW_STAGES, "dismiss"],
+  );
+  check(
+    "AI2 which is where the control is",
+    MAP_NODES.length,
+    REVIEW_STAGES.length + 1,
+  );
 
   // A finished pipeline leaves dismiss outstanding, which is the map's answer
   // and not the strip's. No square reads current, and that is the state.
-  check("AI3 a settled record is current at dismiss", currentNode(settled), "dismiss");
-  check("AI3 so no square on the strip is current", REVIEW_STAGES.some((node) => node === currentNode(settled)), false);
-  check("AI3 and every square it draws reads settled", REVIEW_STAGES.map((node) => displayStatus(settled, node)), ["done", "skipped", "done", "done"]);
+  check(
+    "AI3 a settled record is current at dismiss",
+    currentNode(settled),
+    "dismiss",
+  );
+  check(
+    "AI3 so no square on the strip is current",
+    REVIEW_STAGES.some((node) => node === currentNode(settled)),
+    false,
+  );
+  check(
+    "AI3 and every square it draws reads settled",
+    REVIEW_STAGES.map((node) => displayStatus(settled, node)),
+    ["done", "skipped", "done", "done"],
+  );
 
   // The label a screen reader hears, built the way the strip builds it.
-  const label = REVIEW_STAGES.map((node) => nodeLabel(node, displayStatus(settled, node))).join(", ");
+  const label = REVIEW_STAGES.map((node) =>
+    nodeLabel(node, displayStatus(settled, node)),
+  ).join(", ");
   check("AI4 the label names four stops", label.split(", ").length, 4);
   check("AI4 and never Dismiss", /dismiss/i.test(label), false);
 }

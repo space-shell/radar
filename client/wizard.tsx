@@ -14,8 +14,10 @@ import {
   anchorKey,
   anchorLabel,
   commentBody,
+  postedRounds,
   type Draft,
   type Fault,
+  type ReviewEvent,
 } from "../shared/feedback";
 import type { Finding, VerificationStep } from "../shared/findings";
 import {
@@ -33,6 +35,7 @@ import {
   useFeedback,
   useInbox,
   useSaveDraft,
+  useStage,
   useSubmitReview,
 } from "./queries";
 import { Steady } from "./steady";
@@ -181,6 +184,13 @@ function commentOf(draft: Draft, finding: Finding) {
   return draft.comments[anchorKey(finding)] ?? { include: false, text: "" };
 }
 
+/** What a round did, in the words GitHub does not use. */
+function eventWord(event: ReviewEvent): string {
+  if (event === "APPROVE") return "Approved";
+  if (event === "REQUEST_CHANGES") return "Changes requested";
+  return "Commented";
+}
+
 /**
  * The review James is about to leave, built one finding at a time. Nothing in
  * here reaches GitHub until the confirm press on the last step: every switch,
@@ -197,13 +207,22 @@ export function Wizard({
   layout,
   onBack,
 }: WizardProps) {
-  const { data, isPending, error } = useFeedback(recordKey);
+  const { data, isPending, error, refresh: reread } = useFeedback(recordKey);
   // The inbox cache is what the map behind this screen reads, so a submitted
   // review has to land in it or the map would still say the stage is pending.
   const { refresh } = useInbox();
   const save = useSaveDraft(recordKey);
   const check = useCheckAnchors(recordKey);
   const submit = useSubmitReview(recordKey, refresh);
+  // Review again is the map's Reopen, called from here. The same RPC, so the two
+  // presses cannot disagree about what opening a round does: the server archives
+  // the round that went out and empties the draft in the one write that moves the
+  // stage. Both caches are re-read, because the map behind this screen reads one
+  // and the screen itself reads the other. AC-AP5, AC-AP11.
+  const reopen = useStage(() => {
+    refresh();
+    reread();
+  });
 
   const styles = useMemo(
     () => styleSheet(theme, layout.compact),
@@ -248,22 +267,35 @@ export function Wizard({
   const findings = data?.findings ?? [];
   const step = view.context.step;
 
+  // The draft on disk that the ref was last seeded from, named by the round it
+  // belongs to. One round open is one draft, so the name is the round count and
+  // whether it is open.
+  const seeded = useRef<string | null>(null);
+
   // The one thing the machine cannot see. Which screen is owed is decided by
   // what the server returned, and that arrives as a query result rather than a
-  // press, so a prop to machine sync needs an effect. `submitted` is checked on
-  // every arrival because a review submitted from the preview lands here; the
-  // rest is seeded once.
+  // press, so a prop to machine sync needs an effect. Whether a round is open is
+  // checked on every arrival, because both a submit from the preview and a
+  // reopen from the submitted screen land here.
   useEffect(() => {
     if (!data) return;
     // The draft is seeded before any screen is chosen, including the two that
     // never read it. The loading gate narrows on it, so a screen reached with a
     // null draft is a screen that renders the loading text and never leaves it:
     // that is what a submitted review did when this returned early.
-    if (!draftRef.current) {
+    //
+    // Re-seeded when the round changes rather than once. `reopened` empties the
+    // stored draft, and a ref seeded once would have carried the posted round's
+    // switches and wording straight into the next one, which is the duplicate
+    // comment this feature exists to avoid. A refetch inside one round changes
+    // nothing here, so unsaved keystrokes survive it. AC-AP12.
+    const round = `${data.rounds.length}:${data.open}`;
+    if (seeded.current !== round) {
+      seeded.current = round;
       draftRef.current = data.draft;
       setDraft(data.draft);
     }
-    if (data.submitted) {
+    if (!data.open) {
       go({ type: "SUBMITTED" });
       return;
     }
@@ -315,7 +347,10 @@ export function Wizard({
     // Saves what was typed on the way out, so the draft on disk is the draft on
     // screen even when the exit is the back arrow rather than Next. AC-G6.
     const base = draftRef.current;
-    if (base && !data?.submitted) save.mutate(base);
+    // Only while a round is open. The server refuses a write to a closed round,
+    // so saving on the way out of the submitted screen would answer the back
+    // arrow with an error toast about a draft nobody typed. AC-AP12.
+    if (base && data?.open) save.mutate(base);
     onBack();
   };
 
@@ -346,35 +381,86 @@ export function Wizard({
     );
   }
 
-  const submitted = data?.submitted;
-  if (view.matches("submitted") && submitted) {
+  const rounds = data?.rounds ?? [];
+  // Which finding was first said in which round, so neither the walk nor the
+  // preview can offer a comment that is already on the pull request without
+  // saying so. Empty on a first review, which is every record before group AP.
+  const posted = postedRounds(rounds);
+
+  // Every round that has gone out, and the one press that opens the next. The
+  // walk resumes on its own: reopening moves the stage, the refetch comes back
+  // with a round open, and the effect above sends READY. AC-AP9.
+  if (view.matches("submitted")) {
     return (
       <View style={styles.screen}>
         {header}
-        <SettingsSection title="Submitted">
-          <SettingsCard>
-            <View style={styles.proposal}>
-              <Text style={styles.body}>
-                {submitted.event === "APPROVE"
-                  ? "Approved"
-                  : submitted.event === "REQUEST_CHANGES"
-                    ? "Changes requested"
-                    : "Commented"}
-                , {submitted.comments}{" "}
-                {submitted.comments === 1 ? "comment" : "comments"}
-              </Text>
-              <Text style={styles.muted}>
-                submitted {age(submitted.submittedAt)}
-              </Text>
-              <ExternalLink
-                href={submitted.url}
-                accessibilityLabel={`Open the submitted review for ${recordKey}`}
-              >
-                <Text style={styles.link}>Open the review on GitHub</Text>
-              </ExternalLink>
+        <ScrollView contentContainerStyle={styles.scroll}>
+          <SettingsSection
+            title={rounds.length === 1 ? "Submitted" : "Rounds submitted"}
+            info={`${rounds.length} ${rounds.length === 1 ? "review" : "reviews"} on this pull request, oldest first.`}
+          >
+            {rounds.length === 0 ? (
+              <SettingsCard>
+                <View style={styles.step}>
+                  <Text style={styles.muted}>
+                    The feedback stage is closed and no round is recorded
+                    against it.
+                  </Text>
+                </View>
+              </SettingsCard>
+            ) : (
+              rounds.map((round, index) => (
+                <SettingsCard key={round.id}>
+                  <View style={styles.proposal}>
+                    <Text style={styles.outcome}>Round {index + 1}</Text>
+                    <Text style={styles.body}>
+                      {eventWord(round.event)}, {round.comments}{" "}
+                      {round.comments === 1 ? "comment" : "comments"}
+                    </Text>
+                    <Text style={styles.muted}>
+                      submitted {age(round.submittedAt)}
+                    </Text>
+                    <ExternalLink
+                      href={round.url}
+                      accessibilityLabel={`Open round ${index + 1} of the review for ${recordKey}`}
+                    >
+                      <Text style={styles.link}>Open the review on GitHub</Text>
+                    </ExternalLink>
+                  </View>
+                </SettingsCard>
+              ))
+            )}
+          </SettingsSection>
+
+          {/* An outline, not a fill. The filled button is the press that reaches
+              GitHub and this one writes nothing outward: it opens a draft. AC-AA1. */}
+          <SettingsSection
+            title="Another round"
+            info="Opens an empty draft. The rounds above stay where they are, and the findings already commented on are marked."
+          >
+            <View style={styles.actions}>
+              <ConfirmButton
+                label="Review again"
+                confirmLabel="Review again?"
+                busyLabel="Opening"
+                theme={theme}
+                style={styles.secondaryLabel}
+                confirmStyle={styles.confirm}
+                chrome={styles.secondary}
+                confirmChrome={styles.secondaryArmed}
+                busy={reopen.isPending}
+                disabled={reopen.isPending}
+                onConfirm={() =>
+                  reopen.mutate({
+                    key: recordKey,
+                    stage: "feedback",
+                    status: "pending",
+                  })
+                }
+              />
             </View>
-          </SettingsCard>
-        </SettingsSection>
+          </SettingsSection>
+        </ScrollView>
       </View>
     );
   }
@@ -415,6 +501,7 @@ export function Wizard({
   const findingStep = (finding: Finding, index: number) => {
     const anchor = anchorKey(finding);
     const stored = commentOf(draft, finding);
+    const already = posted.get(anchor);
 
     return (
       <SettingsSection
@@ -433,6 +520,17 @@ export function Wizard({
               {finding.severity}
             </Text>
             <Prose style={styles.body}>{finding.body}</Prose>
+            {/* Said on the finding rather than only in the preview, because the
+                switch is on this screen and that is where the decision is made.
+                The anchor carries the wording, so a reworded finding is a new
+                anchor and reads as unposted, which is right: it is a different
+                comment. AC-AH2, AC-AP3. */}
+            {already ? (
+              <Text style={styles.fault}>
+                Already posted in round {already}. Switching it on sends a
+                second copy.
+              </Text>
+            ) : null}
           </View>
         </SettingsCard>
 
@@ -580,16 +678,25 @@ export function Wizard({
           </View>
         </SettingsCard>
 
-        {sending.map((finding) => (
-          <SettingsCard key={anchorKey(finding)}>
-            <View style={styles.sent}>
-              <Prose style={styles.anchor}>
-                {finding.path}:{finding.line} {finding.side}
-              </Prose>
-              <Prose style={styles.body}>{commentBody(finding, draft)}</Prose>
-            </View>
-          </SettingsCard>
-        ))}
+        {sending.map((finding) => {
+          const already = posted.get(anchorKey(finding));
+          return (
+            <SettingsCard key={anchorKey(finding)}>
+              <View style={styles.sent}>
+                <Prose style={styles.anchor}>
+                  {finding.path}:{finding.line} {finding.side}
+                </Prose>
+                {/* Not excluded. Re-raising a comment the author never answered
+                    is a thing James does on purpose, so the preview says it is
+                    a repeat and leaves the decision where it was made. AC-AP3. */}
+                {already ? (
+                  <Text style={styles.fault}>Repeat of round {already}</Text>
+                ) : null}
+                <Prose style={styles.body}>{commentBody(finding, draft)}</Prose>
+              </View>
+            </SettingsCard>
+          );
+        })}
 
         {/* Shown as excluded rather than quietly dropped: a comment that cannot be
             anchored would take the whole review down with it. AC-G12. */}

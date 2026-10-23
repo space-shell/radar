@@ -57,6 +57,8 @@ import {
   saveDraft,
   submitFeedback,
 } from "./shared/feedback";
+import { readThreads, setThreadResolved } from "./shared/threads";
+import { listThreads, setResolved } from "./server/threads";
 import {
   checkDraftAnchors,
   readFeedbackState,
@@ -335,6 +337,10 @@ export default function contribute(server: PluginServerContext) {
   server.handle(saveDraft, ({ key, draft }) => storeDraft(key, draft));
   server.handle(checkAnchors, ({ key }) => checkDraftAnchors(key));
   server.handle(submitFeedback, ({ key, event }) => submitReview(key, event));
+  server.handle(readThreads, ({ key }) => listThreads(key));
+  server.handle(setThreadResolved, ({ key, id, resolved }) =>
+    setResolved(key, id, resolved),
+  );
 
   // Registered before the first tick, so a turn that ends while it runs is heard.
   const detachHooks = attachHooks(server);

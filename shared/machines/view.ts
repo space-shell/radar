@@ -16,6 +16,7 @@ export interface ViewContext {
 export type ViewEvent =
   | { type: "OPEN_DETAIL"; key: string }
   | { type: "OPEN_WIZARD" }
+  | { type: "OPEN_THREADS" }
   | { type: "BACK" }
   /** A press on a map node. The same node again closes it. */
   | { type: "EXPAND"; node: MapNode }
@@ -23,7 +24,7 @@ export type ViewEvent =
   | { type: "PARAM"; key: string };
 
 /**
- * Which of the inbox screen's three views is on screen.
+ * Which of the inbox screen's four views is on screen.
  *
  * A screen cannot open another screen: `openScreen` is on the sidebar item, the
  * popover and the command context, never on the screen itself. So the detail and
@@ -33,6 +34,12 @@ export type ViewEvent =
  *
  * The wizard is reachable only from a detail, and BACK means the same thing in
  * every state that has one, which is what the three booleans could not say.
+ *
+ * Threads sit beside the wizard rather than inside it. Resolving one is an
+ * immediate GitHub write, and the wizard's whole contract is that nothing reaches
+ * GitHub until the confirm press on its last step: a Resolve button among the
+ * finding switches would make that sentence false. They are also about rounds
+ * already sent, where the wizard is about the one being written. AC-AP10.
  *
  * `PARAM` is ignored in `wizard` on purpose. Honouring it would swap the record
  * under a half written review: the wizard holds unsaved keystrokes in a ref until
@@ -94,12 +101,22 @@ export const viewMachine = setup({
     detail: {
       on: {
         OPEN_WIZARD: { target: "wizard" },
+        OPEN_THREADS: { target: "threads" },
         EXPAND: { actions: "expand" },
         PARAM: { target: "detail", actions: "remember", reenter: true },
         BACK: { target: "list", actions: "forget" },
       },
     },
     wizard: {
+      on: { BACK: { target: "detail" } },
+    },
+    /**
+     * The pull request's own review conversations, which belong to GitHub rather
+     * than to the draft. `PARAM` is ignored here for the reason it is ignored in
+     * the wizard: a view change that did not go through Back would swap the
+     * record under a resolve press.
+     */
+    threads: {
       on: { BACK: { target: "detail" } },
     },
   },
