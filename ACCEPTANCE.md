@@ -1027,6 +1027,36 @@ and, in both directions, the reason behind it.
       and the steps are specific enough to act on without opening the diff.
       Awaiting the app.
 
+## AO. A verification run is not thrown away twice
+
+Four of the five verification failures on the ledger lost work that had already
+been done. #9649 spent seventeen minutes at a browser, found a real fault, and
+wrote `{step, outcome: "passed"}` with no `detail` at index 1. Rejection is per
+file, so the fault went with the malformed entry. The agent rewrote the file
+nineteen minutes later and nothing read it, so James submitted feedback on #9649
+as approved with no verification results in front of him while a failing step sat
+on disk. #9633 lost its run the same way after a permission prompt.
+
+- [x] **AC-AO1** `detail` may be omitted on a passing step. The refine is the
+      whole rule, "anything other than a pass must say why", and requiring the key
+      on a pass added nothing it did not already say. Verified by probe against the
+      #9649 file exactly.
+- [x] **AC-AO2** A failing or not runnable step with no detail, or whitespace for
+      one, is still refused. Verified by probe.
+- [x] **AC-AO3** A verification file written after its own stage gave up is
+      adopted rather than discarded, on the rules `adoptFindings` already holds:
+      only a `failed` stage, only a file newer than that attempt's `startedAt`.
+      The steps are merged into the file the wizard reads, the code findings beside
+      them are untouched, and the scratch file is cleared only once the merge
+      lands. Verified by probe against the #9649 and #9633 timings.
+- [x] **AC-AO4** A stale file, a reopened stage, a skipped one and a running one
+      are all left alone. The merge and the settle are taken together inside the
+      findings lane, so a re-run claiming `running` between them cannot have its
+      fresher result overwritten by the file being rescued. Verified by probe.
+- [x] **AC-AO5** The brief shows a passing entry with no `detail` and says the
+      file is accepted or rejected whole, so the shape the schema accepts and the
+      shape the brief asks for are the same shape.
+
 ## Awaiting the app
 
 Every criterion below is built and typechecked. None can be ticked from here: each asserts
