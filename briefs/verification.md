@@ -57,6 +57,10 @@ Write exactly this shape, to the path in the prompt, and nothing else to it:
   "generatedAt": "<ISO 8601 timestamp>",
   "verification": [
     {
+      "step": "Open a company page and confirm the event list loads.",
+      "outcome": "passed"
+    },
+    {
       "step": "Ask \"which pages were cited most this year\". Each citation opens that page.",
       "outcome": "failed",
       "detail": "The citation opened the document at page 1 rather than page 7."
@@ -68,6 +72,10 @@ Write exactly this shape, to the path in the prompt, and nothing else to it:
 - At least one entry. An empty list is rejected on read and fails the stage.
 - Anything other than `passed` must carry a detail saying why. This is enforced on read,
   not taken on trust.
+- `detail` may be left out entirely on a `passed` step, as the first entry above does.
+  Write one anyway when the pass is worth a sentence, such as a number that was checked.
+- The file is accepted or rejected whole. One malformed entry loses every step in it,
+  including the ones that found something, so check the shape before writing.
 - No code findings here. This file holds verification results only. Anything wrong with
   the code belongs to the QA stage, which has its own file, and writing it here would put
   it in front of James as something that cannot be posted as a comment.

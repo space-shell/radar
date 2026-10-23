@@ -30,12 +30,18 @@ export type Finding = z.infer<typeof findingSchema>;
  * Anything other than a pass must say why. Enforced here rather than asked for in
  * the brief, so a step cannot be quietly written off as not runnable with no
  * reason attached. AC-F4.
+ *
+ * `detail` defaults rather than being required, because the refine below is the
+ * whole rule and a present-but-empty string already satisfies it on a pass.
+ * Requiring the key bought nothing and cost whole runs: rejection is per file, so
+ * one `{step, outcome: "passed"}` with no `detail` threw away a 17 minute browser
+ * run on #9649 including a step that genuinely failed. AC-AO1.
  */
 export const verificationStepSchema = z
   .object({
     step: z.string().min(1),
     outcome: z.enum(["passed", "failed", "not runnable"]),
-    detail: z.string(),
+    detail: z.string().default(""),
   })
   .refine((step) => step.outcome === "passed" || step.detail.trim().length > 0, {
     error: "a step that did not pass must say why",

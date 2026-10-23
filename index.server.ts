@@ -44,6 +44,7 @@ import { stopLanes } from "./server/queue";
 import { setStageStatus } from "./server/stages";
 import { runStageFor, undoStageFor } from "./server/stage-actions";
 import { adoptFindings } from "./server/qa";
+import { adoptVerification } from "./server/verification";
 import { reap } from "./server/reap";
 import { reconcileAgents } from "./server/reconcile";
 import { attachHooks, settleDue } from "./server/hooks";
@@ -173,6 +174,9 @@ async function reconcile(dryRun: boolean): Promise<void> {
   // on this tick rather than the one after it.
   await adoptFindings().catch((error) =>
     log(`findings not adopted: ${String(error)}`),
+  );
+  await adoptVerification().catch((error) =>
+    log(`verification not adopted: ${String(error)}`),
   );
 
   // Before OPEN.md, so the standing list cannot call a merged pull request open.
