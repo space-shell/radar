@@ -24,6 +24,7 @@ import {
 import { Prose } from "./prose";
 import { StageStrip } from "./stages";
 import { StatusBadge } from "./status";
+import { Threads } from "./threads";
 import { Wizard } from "./wizard";
 
 function styleSheet(theme: PluginTheme, compact: boolean) {
@@ -216,6 +217,23 @@ export function Inbox({
     );
   }
 
+  if (view.matches("threads") && selected) {
+    const subject = records.find((record) => record.key === selected);
+    return (
+      <Threads
+        recordKey={selected}
+        title={
+          subject
+            ? `#${subject.number} ${subject.title}`
+            : `Threads ${selected}`
+        }
+        theme={theme}
+        layout={layout}
+        onBack={() => go({ type: "BACK" })}
+      />
+    );
+  }
+
   if (view.matches("detail") && selected) {
     return (
       <Detail
@@ -225,6 +243,7 @@ export function Inbox({
         navigation={navigation}
         onBack={() => go({ type: "BACK" })}
         onOpenWizard={() => go({ type: "OPEN_WIZARD" })}
+        onOpenThreads={() => go({ type: "OPEN_THREADS" })}
         openNode={view.context.node}
         onExpand={(node) => go({ type: "EXPAND", node })}
       />

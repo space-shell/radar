@@ -1057,6 +1057,71 @@ on disk. #9633 lost its run the same way after a permission prompt.
       file is accepted or rejected whole, so the shape the schema accepts and the
       shape the brief asks for are the same shape.
 
+## AP. A review has rounds, and a thread can be closed
+
+One review per pull request was never a decision. `feedback.submitted` was one
+optional object, set once, and its presence refused a second submit in three
+places. The map's Reopen wrote `pending` to the stage and did not touch it, so
+the wizard still opened on the receipt: a control that existed and achieved
+nothing. Resolving a review thread had no code path at all, which left the half
+of a review that happens after it is sent outside the plugin entirely.
+
+- [x] **AC-AP1** A record's reviews are a list, oldest first, and submitting
+      appends rather than replaces. `rounds` is the stored shape; the screens read
+      it through `roundsOf`. Verified by probe.
+- [x] **AC-AP2** A record written before this landed reads as a one round history
+      with no migration: `roundsOf` folds the legacy `submitted` key, and fills the
+      `anchors` a round written before that field arrives without. The server reads
+      its state file as raw JSON, so the schema default never fires on it and the
+      fill is the only thing standing between an old record and a crash in every
+      reader that iterates a round. Verified by probe.
+- [x] **AC-AP3** Each round records the anchors it posted, and a later round marks
+      a finding that has already been commented on, naming the round it first went
+      out in. Marked rather than withheld: re-raising a comment nobody answered is
+      a legitimate thing to do, and the preview says `Repeat of round N` instead of
+      hiding it. Verified by probe.
+- [x] **AC-AP4** Reopening the feedback stage empties the draft only when a round
+      actually went out. With nothing sent it is James returning to a half written
+      review, and the switches and wording he left are still there. Verified by
+      probe, both ways round, and that a qa reopen leaves the feedback draft alone.
+- [x] **AC-AP5** Whether a round is open is the feedback stage's own status, not
+      the number of rounds behind it. One value decides which screen the wizard
+      shows and whether the server accepts a draft write or a submit, so the two
+      cannot disagree about what state the review is in. Verified by probe: a
+      closed round refuses `storeDraft` and `submitReview` with the same sentence,
+      reopening lets the draft write again, and the history is untouched by both.
+- [ ] **AC-AP6** The review threads screen reads GitHub live on each open,
+      unresolved first. Nothing about a thread is stored on the record: a resolved
+      flag cached here goes stale the moment the author resolves one from GitHub,
+      and the screen exists to answer what is still open.
+- [x] **AC-AP7** Resolving is an immediate GitHub write, and it goes through
+      `mutate` in `server/api.ts` beside `call`, so every outward write the plugin
+      makes is still readable from one file. Verified by construction:
+      `server/threads.ts` holds no `fetch` and no `gh` invocation of its own.
+- [ ] **AC-AP8** Unresolve is offered on the same row as Resolve, so the one
+      outward press on that screen has its undo beside it rather than on GitHub.
+- [ ] **AC-AP9** The submitted screen is the receipt for every round, each naming
+      what it did, how many comments it carried, and when, with the press that
+      opens the next below them. The machine half is verified by probe: `submitted`
+      is no longer final, and the walk resumes only on a `READY` carrying a fresh
+      draft, so no second review can leave that screen without a press that
+      deliberately started one. AC-G15 holds unchanged.
+- [x] **AC-AP10** Threads are a fourth view of the inbox screen, not a wizard
+      step. Two reasons, either sufficient: AC-G9 says nothing reaches GitHub until
+      the wizard's final confirm, which a Resolve control among the finding
+      switches would make false; and the wizard's step arithmetic is `findings`,
+      then verification, then the preview, which an inserted screen would shift
+      under every criterion in group G. Verified by probe on the view machine.
+- [ ] **AC-AP11** Reopen on the feedback node is called "Review again" once a
+      round has gone out, and keeps its old name everywhere else. It is the same
+      RPC either way, so the map's press and the wizard's press cannot disagree
+      about what opening a round does.
+- [ ] **AC-AP12** The wizard reseeds its draft when the round changes rather than
+      once on arrival, so a reopen picks up the empty draft and an in-round refetch
+      leaves unsaved keystrokes alone. The server half is verified by probe: a
+      write to a closed round is refused, so the exit save of a wizard sitting on a
+      submitted round cannot overwrite the next one.
+
 ## Awaiting the app
 
 Every criterion below is built and typechecked. None can be ticked from here: each asserts
@@ -1110,6 +1175,8 @@ invocation command, so there is no route to them except the running app.
 | AC-Y7                          | Opening the plugin on an Android device, which is the only place the Hermes failure showed                      |
 | AC-Z18                         | Opening Settings, Radar: the pickers populated, one brief edited and reverted, one save, one Discard            |
 | AC-AA1, AC-AA12                | A look at the wizard's last step, approve on and then off, with one control armed, in both themes               |
+| AC-AP6, AC-AP8                 | One open of Review threads on a pull request with threads, then one Resolve and one Reopen                      |
+| AC-AP9, AC-AP11, AC-AP12       | One Review again press on a submitted record, read on the map and then in the wizard                            |
 
 ## Non-goals
 

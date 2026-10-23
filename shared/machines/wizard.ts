@@ -154,9 +154,21 @@ export const wizardMachine = setup({
       },
     },
     /**
-     * Final. The draft is kept as the record of what went out, and no control
-     * can send a second review. AC-G15.
+     * A round has gone out and none is open. The screen is the receipt for every
+     * round so far, and the one control on it opens the next.
+     *
+     * Not final, which it was until group AP. The draft is still the record of
+     * what went out and nothing here can type over it: reopening is a server
+     * decision, and the walk only resumes when a refetch comes back saying a
+     * round is open, which is what `READY` carries. So the rule AC-G15 was
+     * protecting holds unchanged, that no second review leaves this screen
+     * without a press that deliberately started one. AC-AP5, AC-AP9.
      */
-    submitted: {},
+    submitted: {
+      on: {
+        READY: { target: "reviewing", actions: "arrive" },
+        UNAVAILABLE: { target: "unavailable" },
+      },
+    },
   },
 });

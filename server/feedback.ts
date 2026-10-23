@@ -4,10 +4,12 @@ import {
   anchorKey,
   commentBody,
   emptyDraft,
+  roundsOf,
   type Draft,
   type Fault,
   type Feedback,
   type ReviewEvent,
+  type SubmittedReview,
 } from "../shared/feedback";
 import { reviewOf } from "../shared/review";
 import { call, githubError } from "./api";
@@ -37,13 +39,32 @@ export interface FeedbackState {
   verification: VerificationStep[];
   generatedAt: string | null;
   draft: Draft;
-  submitted?: Feedback["submitted"];
+  rounds: SubmittedReview[];
+  open: boolean;
   error?: string;
 }
 
 function feedbackOf(record: IntakeRecord): Feedback {
   return record.feedback ?? { draft: emptyDraft() };
 }
+
+/**
+ * Whether a round is open for composing.
+ *
+ * The feedback stage is the flag. `submitReview` settles it `done`, and the only
+ * way back to `pending` is a Reopen, which is the press that opens the next
+ * round. Reading the stage rather than counting rounds is what lets one decision
+ * drive both the wizard's screen and the refusals below: before rounds existed
+ * this was `feedback.submitted != null`, which no press could ever clear.
+ * AC-AP5.
+ */
+function roundOpen(record: IntakeRecord): boolean {
+  return reviewOf(record).feedback.status !== "done";
+}
+
+/** Said in one place, because three callers refuse with it. */
+const CLOSED =
+  "this review has already been submitted. Reopen the feedback stage to start another round";
 
 async function findRecord(key: string): Promise<IntakeRecord> {
   const state = await loadState();
@@ -61,7 +82,8 @@ export async function readFeedbackState(key: string): Promise<FeedbackState> {
   const feedback = feedbackOf(record);
   const base = {
     draft: feedback.draft,
-    submitted: feedback.submitted,
+    rounds: roundsOf(feedback),
+    open: roundOpen(record),
   };
 
   try {
@@ -108,9 +130,9 @@ export async function storeDraft(
   return updateState<StageResult>((state) => {
     const record = state.intake.find((candidate) => candidate.key === key);
     if (!record) return { ok: false, error: "no such record" };
-    // A submitted review is final, so its draft is a record of what went out.
-    if (record.feedback?.submitted)
-      return { ok: false, error: "this review has already been submitted" };
+    // A closed round's draft is the record of what went out, so it is not typed
+    // over. Reopening the stage empties it and lets the next round be written.
+    if (!roundOpen(record)) return { ok: false, error: CLOSED };
     record.feedback = { ...feedbackOf(record), draft };
     return { ok: true };
   });
@@ -176,8 +198,7 @@ function refusal(
   event: ReviewEvent,
   draft: Draft,
 ): string | null {
-  if (record.feedback?.submitted)
-    return "this review has already been submitted";
+  if (!roundOpen(record)) return CLOSED;
   if (event === "APPROVE" && !draft.approve)
     return "the approve box is unchecked";
   if (event !== "APPROVE" && draft.body.trim().length === 0) {
@@ -253,15 +274,28 @@ export async function submitReview(
       await updateState((live) => {
         const stored = live.intake.find((candidate) => candidate.key === key);
         if (!stored) return;
+        // Appended, and the legacy `submitted` key is dropped rather than kept
+        // beside it: `roundsOf` reads one or the other and two would double count.
         stored.feedback = {
           draft,
-          submitted: {
-            id: payload.id,
-            url: payload.html_url,
-            event,
-            submittedAt: new Date().toISOString(),
-            comments: comments.length,
-          },
+          rounds: [
+            ...roundsOf(stored.feedback),
+            {
+              id: payload.id,
+              url: payload.html_url,
+              event,
+              submittedAt: new Date().toISOString(),
+              comments: comments.length,
+              anchors: wanted
+                .filter(
+                  (finding) =>
+                    !excluded.some(
+                      (fault) => fault.anchor === anchorKey(finding),
+                    ),
+                )
+                .map(anchorKey),
+            },
+          ],
         };
       });
 

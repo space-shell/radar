@@ -9,6 +9,7 @@ import {
   reviewOf,
   type ReviewStage,
 } from "../shared/review";
+import { reopened, roundsOf } from "../shared/feedback";
 import { keyUrl, note as ledger } from "./ledger";
 import { log } from "./log";
 import { inLane, isLaneCancelled } from "./queue";
@@ -146,8 +147,35 @@ export interface StageResult {
 }
 
 /**
- * The two transitions with no side effects: skipping a stage and clearing one back
- * to pending. Everything that touches GitHub or an agent lives in its own action.
+ * What the ledger calls the transition. Reopening feedback is the one that needs
+ * saying differently: "feedback reopened" reads as undoing a review, and what it
+ * actually did was open the next round on a pull request that already has one.
+ *
+ * Read after the write, which is where the count is right either way: `reopened`
+ * keeps the history, so the rounds already sent are the same number before and
+ * after.
+ */
+async function reopenNote(
+  key: string,
+  stage: ReviewStage,
+  status: "pending" | "skipped",
+): Promise<string> {
+  if (status === "skipped") return `${stage} skipped`;
+  if (stage !== "feedback") return `${stage} reopened`;
+  const state = await loadState();
+  const record = state.intake.find((candidate) => candidate.key === key);
+  const sent = roundsOf(record?.feedback).length;
+  return sent === 0 ? "feedback reopened" : `feedback round ${sent + 1} opened`;
+}
+
+/**
+ * The two transitions that reach neither GitHub nor an agent: skipping a stage
+ * and clearing one back to pending. Everything outward lives in its own action.
+ *
+ * Not side effect free, since group AP. Clearing feedback back to pending is how
+ * a second round is opened, and that archives the round that went out and empties
+ * the draft under it. Still nothing outward: it is a write to this plugin's own
+ * state file. AC-AP4.
  */
 export async function setStageStatus(
   key: string,
@@ -205,6 +233,20 @@ export async function setStageStatus(
         ? { status, endedAt: new Date().toISOString() }
         : { status };
     record.review = review;
+
+    /*
+     * Reopening feedback is how a second round is started, so the stored feedback
+     * moves with the stage.
+     *
+     * It happens here rather than behind an RPC of its own because the map's
+     * Reopen and the wizard's "Review again" are the same decision, and two paths
+     * to it would be two chances to disagree about what a round is. The whole
+     * transition is one `updateState` body, so a reader can never see the stage
+     * pending with last round's draft still under it. AC-AP4.
+     */
+    if (stage === "feedback" && status === "pending" && record.feedback) {
+      record.feedback = reopened(record.feedback);
+    }
     return { ok: true };
   });
 
@@ -213,7 +255,7 @@ export async function setStageStatus(
     ledger({
       source: "github",
       subject: key,
-      what: `${stage} ${status === "skipped" ? "skipped" : "reopened"}`,
+      what: await reopenNote(key, stage, status),
       url: keyUrl(key),
     });
   }

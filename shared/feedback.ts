@@ -98,14 +98,93 @@ export const submittedReviewSchema = z.object({
   event: reviewEventSchema,
   submittedAt: z.string(),
   comments: z.number(),
+  /**
+   * The anchors that went out in this round, so a later round can say which
+   * findings have already been commented on.
+   *
+   * Without it a follow up re-offers the whole list with every switch off and no
+   * mark on the three that were posted an hour ago, which is a duplicate comment
+   * waiting to be pressed. Defaulted rather than required: rounds written before
+   * this field read as an empty set, which marks nothing rather than refusing the
+   * record. AC-AP3.
+   */
+  anchors: z.array(z.string()).default([]),
 });
+export type SubmittedReview = z.infer<typeof submittedReviewSchema>;
 
 export const feedbackSchema = z.object({
   draft: draftSchema,
-  /** Set once. Its presence is what refuses a second submit. AC-G15. */
+  /**
+   * Every review sent on this pull request, oldest first.
+   *
+   * A list rather than one submission, because a review is rarely the end of the
+   * conversation: the author pushes a fix and the next thing owed is a second
+   * round saying so. One `submitted` object made that impossible, and the map's
+   * Reopen on the feedback node only looked like it helped. AC-AP1.
+   */
+  rounds: z.array(submittedReviewSchema).optional(),
+  /**
+   * The single submission this held before rounds existed, read but never
+   * written. `roundsOf` folds it in, so a record stored by the older shape reads
+   * as a one round history with no migration. AC-AP2.
+   */
   submitted: submittedReviewSchema.optional(),
 });
 export type Feedback = z.infer<typeof feedbackSchema>;
+
+/**
+ * Every round sent, whichever shape the record was stored in.
+ *
+ * Never both: a write always sets `rounds` and omits `submitted`, so the legacy
+ * field is gone the first time a record is submitted to or reopened after this.
+ */
+export function roundsOf(feedback: Feedback | undefined): SubmittedReview[] {
+  if (!feedback) return [];
+  const rounds =
+    feedback.rounds ?? (feedback.submitted ? [feedback.submitted] : []);
+  // `anchors` is defaulted by the schema, and the server reads its state file as
+  // raw JSON rather than through it, so a round written before the field existed
+  // arrives without one. Filled here, which is the only place both shapes meet:
+  // the readers all iterate it, and an undefined there is a crash rather than an
+  // empty set.
+  return rounds.map((round) => ({ ...round, anchors: round.anchors ?? [] }));
+}
+
+/**
+ * Which findings have already been commented on, and in which round.
+ *
+ * The first round an anchor went out in, not the last: a finding posted in round
+ * one and re-posted in round three was first raised in one, and that is the
+ * number that tells James whether he is about to say it twice. AC-AP3.
+ */
+export function postedRounds(rounds: SubmittedReview[]): Map<string, number> {
+  const posted = new Map<string, number>();
+  for (let index = 0; index < rounds.length; index++) {
+    const round = rounds[index];
+    if (!round) continue;
+    for (const anchor of round.anchors) {
+      if (!posted.has(anchor)) posted.set(anchor, index + 1);
+    }
+  }
+  return posted;
+}
+
+/**
+ * Opens a fresh round, keeping the history.
+ *
+ * The draft is emptied only when a round actually went out. A reopen with nothing
+ * sent is James coming back to a review he was part way through, and throwing his
+ * typing away there would be the loss, not the fix. A reopen after a round is the
+ * opposite: that draft is the record of what was posted, and reusing it would
+ * re-offer every comment already on the pull request with its wording intact.
+ * AC-AP4.
+ */
+export function reopened(feedback: Feedback): Feedback {
+  const rounds = roundsOf(feedback);
+  return rounds.length === 0
+    ? { draft: feedback.draft, rounds: [] }
+    : { draft: emptyDraft(), rounds };
+}
 
 /** One finding that cannot be posted where it claims to belong. AC-G12. */
 export const faultSchema = z.object({ anchor: z.string(), reason: z.string() });
@@ -130,7 +209,16 @@ export const readFeedback = defineRpc({
     verification: z.array(verificationStepSchema),
     generatedAt: z.string().nullable(),
     draft: draftSchema,
-    submitted: submittedReviewSchema.optional(),
+    /** Every review already sent, oldest first. Empty before the first one. */
+    rounds: z.array(submittedReviewSchema),
+    /**
+     * Whether a round is open for composing. False once a review has gone out and
+     * nothing has reopened the stage, which is the one thing that decides between
+     * the walk and the receipt. The wizard asks this rather than counting rounds,
+     * so reopening is a server decision and the screen cannot disagree with the
+     * refusal `storeDraft` would give it. AC-AP5.
+     */
+    open: z.boolean(),
     /** Why there are no findings, when that is the answer. R10. */
     error: z.string().optional(),
   }),
