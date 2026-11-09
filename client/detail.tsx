@@ -4,7 +4,12 @@ import type { PluginScreenProps } from "@getpaseo/plugin/client";
 import { ExternalLink } from "@getpaseo/plugin/client/ui";
 import { useEffect, useMemo } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { activityAt, pullRequestUrl, type IntakeRecord } from "../shared/inbox";
+import {
+  activityAt,
+  pullRequestUrl,
+  rereviewDue,
+  type IntakeRecord,
+} from "../shared/inbox";
 import {
   MAP_NODES,
   REVIEW_STAGES,
@@ -172,6 +177,9 @@ function styleSheet(theme: PluginTheme, compact: boolean) {
     nodeStatus: { color: colors.foregroundMuted, fontSize: 12 },
     nodeTiming: { color: colors.foregroundMuted, fontSize: 12 },
     nodeNote: { color: colors.foreground, fontSize: 12 },
+    /** The same accent and the same arrow as the inbox pill, so the two read as
+        one fact said in two places. */
+    nodeMoved: { color: highlight(colors.accent), fontSize: 12 },
     nodeError: { color: colors.statusDanger, fontSize: 12 },
     actions: {
       flexDirection: "row" as const,
@@ -288,6 +296,10 @@ export function Detail({
   // How many reviews have already gone out. It changes what Reopen is called on
   // the feedback node, and whether the threads press is worth offering. AC-AP11.
   const rounds = roundsOf(record.feedback).length;
+  // Whether the author has pushed since that last round, and when. Asked once
+  // here rather than inside the map, which runs per node.
+  const moved = rereviewDue(record);
+  const movedAt = record.pr?.headMovedAt;
   const { agentId, workspaceId } = record;
   const openAgent = navigation?.openAgent;
   const openWorkspace = navigation?.openWorkspace;
@@ -527,6 +539,16 @@ export function Detail({
                   {/* What the stage produced, in a few words. "7 findings". No tap. */}
                   {stage?.note ? (
                     <Prose style={styles.nodeNote}>{stage.note}</Prose>
+                  ) : null}
+                  {/* Why another round is worth opening, said where the press
+                      that opens it is. Without it a record whose head has moved
+                      looks identical here to one that has not, and the pill
+                      saying so is three screens away on the inbox. AC-AQ14. */}
+                  {node === "feedback" && moved ? (
+                    <Prose style={styles.nodeMoved}>
+                      {"\u2191"} New commits since round {rounds}
+                      {movedAt ? `, pushed ${age(movedAt)}` : ""}.
+                    </Prose>
                   ) : null}
                   {/* A failure says why where it happened, with no further tap. AC-J6. */}
                   {stage?.error ? (

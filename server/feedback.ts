@@ -5,6 +5,7 @@ import {
   commentBody,
   emptyDraft,
   roundsOf,
+  type Carried,
   type Draft,
   type Fault,
   type Feedback,
@@ -48,6 +49,8 @@ export interface FeedbackState {
   generatedAt: string | null;
   draft: Draft;
   rounds: SubmittedReview[];
+  /** What the rounds above got, stamped at the reopen. Empty on a first round. */
+  carried: Carried[];
   open: boolean;
   error?: string;
 }
@@ -91,6 +94,7 @@ export async function readFeedbackState(key: string): Promise<FeedbackState> {
   const base = {
     draft: feedback.draft,
     rounds: roundsOf(feedback),
+    carried: feedback.carried ?? [],
     open: roundOpen(record),
   };
 

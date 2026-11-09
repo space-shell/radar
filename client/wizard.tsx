@@ -9,17 +9,25 @@ import {
 import { useMachine } from "./vendor/xstate-react.mjs";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
+import { findingAppearance } from "../shared/appearance";
 import { carryWhite, highlight, success, WHITE } from "../shared/colour";
 import {
   anchorKey,
   anchorLabel,
   commentBody,
+  placeOf,
+  postedPlaces,
   postedRounds,
+  type Carried,
   type Draft,
   type Fault,
   type ReviewEvent,
 } from "../shared/feedback";
-import type { Finding, VerificationStep } from "../shared/findings";
+import type {
+  Finding,
+  FindingState,
+  VerificationStep,
+} from "../shared/findings";
 import {
   stepLabel,
   wizardMachine,
@@ -30,6 +38,7 @@ import { age } from "../shared/format";
 import { useKeyboardAvoidance } from "./keyboard";
 import { MultilineInput } from "./multiline";
 import { Prose } from "./prose";
+import { FindingNode } from "./stages";
 import {
   useCheckAnchors,
   useFeedback,
@@ -101,6 +110,22 @@ function styleSheet(theme: PluginTheme, compact: boolean) {
       letterSpacing: 0.6,
     },
     proposal: { gap: 6, padding: 12 },
+    /** The state square, its word and the round, on one line above the severity. */
+    carry: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      flexWrap: "wrap" as const,
+      gap: 8,
+    },
+    /** The author's own words, set in from the comment they answer. */
+    reply: {
+      color: colors.foreground,
+      fontSize: 12,
+      lineHeight: 17,
+      paddingLeft: 10,
+      borderLeftWidth: 2,
+      borderLeftColor: colors.border,
+    },
     body: { color: colors.foreground, fontSize: 13, lineHeight: 18 },
     muted: { color: colors.foregroundMuted, fontSize: 12, lineHeight: 17 },
     fault: { color: colors.statusWarning, fontSize: 12, lineHeight: 17 },
@@ -184,6 +209,32 @@ function commentOf(draft: Draft, finding: Finding) {
   return draft.comments[anchorKey(finding)] ?? { include: false, text: "" };
 }
 
+/**
+ * What a carried finding's card says in place of the plain repeat warning.
+ *
+ * One sentence per state, and every one of them ends by saying what switching
+ * the switch on would do, because that is the decision the card is attached to.
+ * The warning survives verbatim where there is no live state: a round that went
+ * out before the carry existed, or a reopen whose read of GitHub failed.
+ *
+ * `resolved` is the only one that does not say "a second copy": the thread is
+ * closed, so switching it on is re-raising rather than repeating.
+ */
+function carriedCopy(state: FindingState, round: number): string {
+  switch (state) {
+    case "resolved":
+      return `Posted in round ${round}, and the thread is resolved. Switching it on raises it again.`;
+    case "replied":
+      return `Posted in round ${round}, and answered. Switching it on sends a second copy.`;
+    case "outdated":
+      return `Posted in round ${round}. The code at that line has moved since. Switching it on sends a second copy.`;
+    case "untouched":
+      return `Posted in round ${round}, and nothing has happened to it. Switching it on sends a second copy.`;
+    default:
+      return `Posted in round ${round}. Its thread could not be matched, so what became of it is unknown. Switching it on sends a second copy.`;
+  }
+}
+
 /** What a round did, in the words GitHub does not use. */
 function eventWord(event: ReviewEvent): string {
   if (event === "APPROVE") return "Approved";
@@ -210,7 +261,9 @@ export function Wizard({
   const { data, isPending, error, refresh: reread } = useFeedback(recordKey);
   // The inbox cache is what the map behind this screen reads, so a submitted
   // review has to land in it or the map would still say the stage is pending.
-  const { refresh } = useInbox();
+  // Its records also carry the pull request's head, which is the one fact the
+  // feedback read does not hold and the submitted screen needs.
+  const { data: inbox, refresh } = useInbox();
   const save = useSaveDraft(recordKey);
   const check = useCheckAnchors(recordKey);
   const submit = useSubmitReview(recordKey, refresh);
@@ -386,6 +439,37 @@ export function Wizard({
   // preview can offer a comment that is already on the pull request without
   // saying so. Empty on a first review, which is every record before group AP.
   const posted = postedRounds(rounds);
+  // The same question asked by place rather than by wording, which is what
+  // catches a re-run that rewrote a carried finding's sentence: the anchor is
+  // new, so `posted` has never seen it, and the author would get a near
+  // duplicate with nothing on it saying so. AC-AQ9.
+  const places = postedPlaces(rounds);
+  // What those rounds got, as the reopen read it. Keyed by anchor, because that
+  // is what the card has in hand. Empty on a first round. AC-AQ15.
+  const carried = new Map<string, Carried>(
+    (data?.carried ?? []).map((entry) => [entry.anchor, entry]),
+  );
+
+  /*
+   * Whether the pull request is still exactly where the last round left it.
+   *
+   * Said only in that direction. A head that has moved is the case re-deriving
+   * against the new commits was built for, and a warning there would be noise;
+   * a head that has not is the case where another round buys nothing, and that
+   * is worth one sentence before the press.
+   *
+   * Both shas or nothing. Without them the honest answer is that it is not
+   * known, and the line is left off rather than guessed. The stored head is as
+   * old as the last sweep, so a push in the last half minute still reads as no
+   * push; the row's own marker is what carries that, within a sweep. AC-AQ14.
+   */
+  const lastRound = rounds[rounds.length - 1];
+  const open = inbox?.records.find((candidate) => candidate.key === recordKey);
+  const still =
+    open?.pr?.state === "open" &&
+    !!open.pr.headSha &&
+    !!lastRound?.headSha &&
+    open.pr.headSha === lastRound.headSha;
 
   // Every round that has gone out, and the one press that opens the next. The
   // walk resumes on its own: reopening moves the stage, the refetch comes back
@@ -436,7 +520,7 @@ export function Wizard({
               GitHub and this one writes nothing outward: it opens a draft. AC-AA1. */}
           <SettingsSection
             title="Another round"
-            info="Opens an empty draft. The rounds above stay where they are, and the findings already commented on are marked."
+            info={`Opens an empty draft. The rounds above stay where they are, and the findings already commented on are marked.${still ? ` Nothing has been pushed since round ${rounds.length}.` : ""}`}
           >
             <View style={styles.actions}>
               <ConfirmButton
@@ -502,6 +586,15 @@ export function Wizard({
     const anchor = anchorKey(finding);
     const stored = commentOf(draft, finding);
     const already = posted.get(anchor);
+    // Only ever set on an anchor a round already sent, because the carry is
+    // built from those rounds. The round number shown is `already`, the first
+    // one that said it, so the card carries one number rather than two that can
+    // differ on a finding posted twice. AC-AP3.
+    const mark = carried.get(anchor);
+    const place = placeOf(anchor);
+    // The hint, and only where the exact wording is new: an anchor `posted`
+    // already knows needs no weaker claim about its neighbourhood.
+    const elsewhere = already || !place ? undefined : places.get(place);
 
     return (
       <SettingsSection
@@ -509,7 +602,34 @@ export function Wizard({
         info={`${finding.path}:${finding.line} on the ${finding.side} side`}
       >
         <SettingsCard>
-          <View style={styles.proposal}>
+          <View
+            style={
+              mark
+                ? {
+                    ...styles.proposal,
+                    // A rule in the state's own colour, the same one the threads
+                    // screen draws, so carried is legible from the left edge
+                    // before a word of it is read. A new finding gets none.
+                    borderLeftWidth: 2,
+                    borderLeftColor: findingAppearance(mark.state, theme)
+                      .borderColor,
+                  }
+                : styles.proposal
+            }
+          >
+            {/* The square and the word the threads screen uses, so one finding
+                cannot read `outdated` there and something else here. AC-J3.
+                `read` is named because this was stamped when the round opened:
+                the wizard holds unsaved keystrokes, so it takes no live read of
+                its own. AC-G6, AC-AQ15. */}
+            {mark ? (
+              <View style={styles.carry}>
+                <FindingNode state={mark.state} theme={theme} />
+                <Text style={styles.outcome}>
+                  round {already ?? mark.round} · read {age(mark.readAt)}
+                </Text>
+              </View>
+            ) : null}
             <Text
               style={
                 finding.severity === "blocking"
@@ -520,6 +640,15 @@ export function Wizard({
               {finding.severity}
             </Text>
             <Prose style={styles.body}>{finding.body}</Prose>
+            {/* What the author said back, where they said anything. It is the
+                whole reason a carried card is worth drawing: the decision is
+                whether to say it again, and the answer is in the reply. */}
+            {mark && mark.reply.length > 0 ? (
+              <Prose style={styles.reply}>
+                {mark.replier ? `${mark.replier}: ` : ""}
+                {mark.reply}
+              </Prose>
+            ) : null}
             {/* Said on the finding rather than only in the preview, because the
                 switch is on this screen and that is where the decision is made.
                 The anchor carries the wording, so a reworded finding is a new
@@ -527,8 +656,17 @@ export function Wizard({
                 comment. AC-AH2, AC-AP3. */}
             {already ? (
               <Text style={styles.fault}>
-                Already posted in round {already}. Switching it on sends a
-                second copy.
+                {mark
+                  ? carriedCopy(mark.state, already)
+                  : `Already posted in round ${already}. Switching it on sends a second copy.`}
+              </Text>
+            ) : null}
+            {/* Weaker than the line above and never a substitute for it: two
+                findings at one line share a place, so this says something was
+                said here, not that it was this. AC-AQ9. */}
+            {elsewhere ? (
+              <Text style={styles.muted}>
+                A different wording of this was posted in round {elsewhere}.
               </Text>
             ) : null}
           </View>

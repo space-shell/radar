@@ -9,10 +9,12 @@ import {
   reviewOf,
   type ReviewStage,
 } from "../shared/review";
-import { reopened, roundsOf } from "../shared/feedback";
+import { reopened, roundsOf, type Carried } from "../shared/feedback";
 import { keyUrl, note as ledger } from "./ledger";
 import { log } from "./log";
 import { inLane, isLaneCancelled } from "./queue";
+import { carriedOf } from "./rereview";
+import { listThreads } from "./threads";
 
 /**
  * Stages this process is running or holding a press for.
@@ -169,6 +171,43 @@ async function reopenNote(
 }
 
 /**
+ * What the rounds already sent got, read once, at the moment the next round
+ * opens.
+ *
+ * Read here rather than by the wizard because `useFeedback` deliberately holds
+ * no interval and no focus refetch: the screen keeps unsaved keystrokes in a ref
+ * (AC-G6), so a query that can change a card under them is the hazard a write
+ * is. The reopen is the one moment where nothing is typed yet, and the card
+ * names `readAt` so it never implies live.
+ *
+ * Returns null, never throws. The carry is display only, so a GitHub that cannot
+ * be reached costs the marks on the next round's cards and nothing else: the
+ * reopen itself still happens. AC-AQ15.
+ *
+ * One bounded read, at the plugin's twenty second API timeout, before a press
+ * that is otherwise instant. Accepted: a reopen is deliberate and infrequent,
+ * and there is no later moment that can take this read without putting a GitHub
+ * call under James' typing.
+ */
+async function carryForward(key: string): Promise<Carried[] | null> {
+  const state = await loadState();
+  const record = state.intake.find((candidate) => candidate.key === key);
+  // No round behind it is the first review, which has nothing to carry. A
+  // running stage is a submit in flight, and the `updateState` below will refuse
+  // the press anyway, so neither spends a request.
+  if (!record || roundsOf(record.feedback).length === 0) return null;
+  if (reviewOf(record).feedback.status === "running") return null;
+
+  const threads = await listThreads(key);
+  if (threads.error) {
+    log(`${key}: the last round could not be read at reopen: ${threads.error}`);
+    return null;
+  }
+  const carried = carriedOf(threads.posted, new Date().toISOString());
+  return carried.length > 0 ? carried : null;
+}
+
+/**
  * The two transitions that reach neither GitHub nor an agent: skipping a stage
  * and clearing one back to pending. Everything outward lives in its own action.
  *
@@ -210,6 +249,13 @@ export async function setStageStatus(
     return { ok: false, error: "the turn has already started" };
   }
 
+  // Before the lock, because it is a network read and `updateState` holds the
+  // whole state file while its body runs.
+  const carried =
+    stage === "feedback" && status === "pending"
+      ? await carryForward(key)
+      : null;
+
   const result = await updateState<StageResult>((state) => {
     const record = state.intake.find((candidate) => candidate.key === key);
     if (!record) return { ok: false, error: "no such record" };
@@ -245,7 +291,11 @@ export async function setStageStatus(
      * pending with last round's draft still under it. AC-AP4.
      */
     if (stage === "feedback" && status === "pending" && record.feedback) {
-      record.feedback = reopened(record.feedback);
+      // `reopened` returns a fresh object and carries nothing over, so a read
+      // that failed leaves no carry at all rather than last round's. The wizard
+      // then draws the cards it drew before this existed.
+      const next = reopened(record.feedback);
+      record.feedback = carried ? { ...next, carried } : next;
     }
     return { ok: true };
   });
