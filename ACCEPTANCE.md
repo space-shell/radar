@@ -1200,6 +1200,18 @@ lands, was a blind full re-read of a diff already read once.
       onto the record and opens an empty draft beside it. A carried finding with
       no body on either side is dropped rather than shown as a row saying only
       that something was said at that line. Verified by probe. AC-G3 is untouched.
+- [x] **AC-AQ16** A round that posted comments but stored no anchors is named in
+      the re-review file rather than passed over. Twenty nine of the thirty one
+      rounds on disk predate `anchors` entirely: they hold a comment count and
+      nothing else, so `backfillCommentIds` has nothing to pair an id to and the
+      carry has nothing to bind a thread against. Nothing is recoverable for
+      them, which is why it is said out loud: an empty `carried` on a pull
+      request carrying live comments reads to the agent as "nothing was ever
+      raised", and that is a false claim rather than a missing one. It travels
+      on `carriedError`, the channel the brief already owns, so the instruction
+      the agent gets is the one it already has for a thread read that failed.
+      One record is exposed today, `Quartr-App/web#9629`; the other twenty eight
+      are merged or closed and `rereviewDue` excludes them. Verified by probe.
 - [ ] **AC-AQ11** The marker appears within 30 seconds of a push on a record with
       a round out, survives opening the record, and clears when the next round
       goes out. It is not a second unread dot: the dot clears on opening, this

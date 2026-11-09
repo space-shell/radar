@@ -28,6 +28,7 @@ import {
   carryFor,
   outcomeOf,
   scopeFor,
+  unanchoredNote,
 } from "../server/rereview.ts";
 
 let failures = 0;
@@ -841,6 +842,77 @@ const record = (pr, rounds = [], extra = {}) => ({
       verification: [],
     }).map((entry) => [entry.body, entry.severity]),
     [["resolved", "concern"]],
+  );
+}
+
+// AQ16. The rounds nothing can be recovered for. Twenty nine of the thirty one
+// rounds on James' machine predate `anchors`, so they hold a comment count and
+// nothing else: the backfill cannot pair ids to anchors that were never stored,
+// and the carry cannot bind a thread to them. The claim being tested is that
+// the file says so, because an empty `carried` on a pull request carrying live
+// comments reads as "nothing was ever raised".
+{
+  const legacy = (comments) => ({
+    id: 5616250241,
+    url: "https://github.com/o/r/pull/1#pullrequestreview-5616250241",
+    event: "COMMENT",
+    submittedAt: AT.round,
+    comments,
+    anchors: [],
+  });
+
+  check(
+    "AQ16 a round that posted comments without anchors is named",
+    unanchoredNote(record(null, [legacy(3)])),
+    "round 1 posted 3 comments but recorded no anchors, so nothing those rounds said could be carried here",
+  );
+  check(
+    "AQ16 one comment is one comment",
+    unanchoredNote(record(null, [legacy(1)])),
+    "round 1 posted 1 comment but recorded no anchors, so nothing those rounds said could be carried here",
+  );
+  check(
+    "AQ16 an approval that said nothing inline has nothing to report",
+    unanchoredNote(record(null, [legacy(0)])),
+    null,
+  );
+  check(
+    "AQ16 a round with anchors is not a gap",
+    unanchoredNote(record(null, [round(1, ["a", "b"])])),
+    null,
+  );
+  check(
+    "AQ16 and a record that never sent a round is not one either",
+    unanchoredNote(record(null, [])),
+    null,
+  );
+  // The ordinal, not the review id: every carried finding names its round the
+  // way `postedRounds` numbers them, and two numbering schemes on one screen
+  // would read as two different rounds.
+  check(
+    "AQ16 the gap is numbered as the carry numbers rounds",
+    unanchoredNote(record(null, [legacy(2), round(2, ["a"])])),
+    "round 1 posted 2 comments but recorded no anchors, so nothing those rounds said could be carried here",
+  );
+  check(
+    "AQ16 two gaps are both named",
+    unanchoredNote(record(null, [legacy(2), legacy(1)])),
+    "round 1 posted 2 comments but recorded no anchors; round 2 posted 1 comment but recorded no anchors, so nothing those rounds said could be carried here",
+  );
+  // The legacy `submitted` shape is what all twenty nine of them are actually
+  // stored as, so reading them through `roundsOf` is the case that matters.
+  check(
+    "AQ16 the pre-rounds shape is read the same way",
+    unanchoredNote({
+      key: "o/r#1",
+      repo: "o/r",
+      number: 1,
+      title: "t",
+      firstSeen: "2026-10-01T09:00:00.000Z",
+      state: "created",
+      feedback: { draft: emptyDraft(), submitted: legacy(3) },
+    }),
+    "round 1 posted 3 comments but recorded no anchors, so nothing those rounds said could be carried here",
   );
 }
 

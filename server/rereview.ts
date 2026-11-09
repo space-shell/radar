@@ -300,6 +300,33 @@ export async function scopeFor(
 }
 
 /**
+ * The rounds that went out before anchors were stored on them, named.
+ *
+ * Twenty nine of the thirty one rounds on disk predate `anchors` entirely: they
+ * hold a comment count and nothing else, so `backfillCommentIds` could not
+ * repair them either. There is no anchor to pair an id to and no place to match
+ * a thread against, so every comment they posted is invisible to the carry.
+ *
+ * Nothing can be recovered for them, which is exactly why it has to be said.
+ * An empty carried list on a pull request carrying live comments reads to the
+ * agent as "nothing was ever raised", and that is a false claim rather than a
+ * missing one. AC-AQ16.
+ */
+export function unanchoredNote(record: IntakeRecord): string | null {
+  const gaps: string[] = [];
+  // The ordinal, not `round.id`: the agent reads this beside `round` on every
+  // carried finding, and those are numbered the way `postedRounds` numbers them.
+  roundsOf(record.feedback).forEach((round, index) => {
+    if (round.anchors.length > 0 || round.comments < 1) return;
+    gaps.push(
+      `round ${index + 1} posted ${round.comments} ${round.comments === 1 ? "comment" : "comments"} but recorded no anchors`,
+    );
+  });
+  if (gaps.length === 0) return null;
+  return `${gaps.join("; ")}, so nothing those rounds said could be carried here`;
+}
+
+/**
  * One finding an earlier round posted, as the next run is told about it.
  *
  * The body is the thread's first comment, not the finding's: `commentBody` posts

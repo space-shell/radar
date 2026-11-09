@@ -74,8 +74,10 @@ same instruction: judge it again.
 The findings file is still the whole output. A carried finding you leave out is dropped,
 which is the right answer when the author fixed it.
 
-If the file carries `carriedError`, the previous round could not be read at all. Review
-as usual, and accept that something you write may repeat a comment already posted.
+If the file carries `carriedError`, something an earlier round posted is missing from
+`carried`, and the message says what: either the threads could not be read at all, or a
+round went out before the plugin recorded what it anchored each comment to. Review as
+usual, and accept that something you write may repeat a comment already posted.
 
 ## The file
 
