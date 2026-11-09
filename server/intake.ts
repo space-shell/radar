@@ -260,7 +260,11 @@ export async function intake(
   };
 
   if (!checkout) {
+    // The row's fault glyph and the detail footer are both keyed on
+    // `lastError`, so a state word written without one is a red word and
+    // nothing else: the reason lives only in the daemon log. AC-AR3.
     record.state = "unmapped";
+    record.lastError = `no local checkout for ${request.repo}`;
     log(`unmapped repo ${request.repo} for PR #${request.number}, skipping`);
   } else if (dryRun) {
     record.state = "dry-run";
@@ -289,10 +293,12 @@ export async function intake(
         log(`launched ${request.key} as agent ${agentId}`);
       } else {
         record.state = "failed";
+        record.lastError = "launch produced no agent";
         log(`launch for ${request.key} produced no agent`);
       }
     } catch (error) {
       record.state = "failed";
+      record.lastError = String(error);
       log(`launch failed for ${request.key}: ${String(error)}`);
     }
   }

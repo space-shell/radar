@@ -152,6 +152,7 @@ async function backfill(): Promise<void> {
         log(`backfilled ${record.key} as agent ${result.agentId}`);
       } else {
         record.state = "failed";
+        record.lastError = "the launch left no agent to find";
         log(`no agent found for ${record.key}, marking failed`);
       }
     }
