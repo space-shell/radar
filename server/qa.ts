@@ -15,6 +15,7 @@ import { briefPath } from "./briefs";
 import {
   carryFor,
   scopeFor,
+  unanchoredNote,
   type CarriedFinding,
   type QaScope,
   type ScopedFile,
@@ -103,7 +104,15 @@ async function guideFor(
     );
     return { ...file, carriedError: threads.error };
   }
-  return { ...file, carried: carryFor(threads.posted, previous) };
+
+  // A clean read is not the same as a complete one. A round stored before
+  // anchors existed posted comments this carry cannot see, and the read says
+  // nothing about them because there is nothing to bind. Named rather than
+  // left as silence, for the same reason a failed read is. AC-AQ16.
+  const gap = unanchoredNote(record);
+  const carried = carryFor(threads.posted, previous);
+  if (gap) log(`${record.key}: ${gap}`);
+  return gap ? { ...file, carried, carriedError: gap } : { ...file, carried };
 }
 
 function prompt(
