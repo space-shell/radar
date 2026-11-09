@@ -1,11 +1,22 @@
-import type { ReviewThread } from "../shared/threads";
+import { roundsOf, type SubmittedReview } from "../shared/feedback";
+import type { PostedFinding, ReviewThread } from "../shared/threads";
 import { graphql, mutate } from "./api";
 import { keyUrl, note as ledger } from "./ledger";
 import { log } from "./log";
+import { bindRounds, type BindableThread } from "./rereview";
 import { loadState } from "./state";
 
 /** As many as one pull request realistically carries. Beyond this, read it on GitHub. */
 const LIMIT = 100;
+/**
+ * Enough of each thread to find the author's answer without paging.
+ *
+ * Ten rather than one, and one rather than all: the opening comment alone
+ * cannot say whether anyone replied, and a hundred threads at the full comment
+ * count is a page of nodes for a question the first reply already answers. A
+ * thread longer than this is one to read on GitHub.
+ */
+const COMMENTS = 10;
 
 interface ThreadNode {
   id: string;
@@ -13,12 +24,18 @@ interface ThreadNode {
   isOutdated: boolean;
   path: string;
   line: number | null;
+  /** Kept after the diff moves, which `line` is not. The anchor's own line. */
+  originalLine: number | null;
+  diffSide: string;
   comments: {
     totalCount: number;
     nodes: {
+      databaseId: number | null;
       author: { login: string } | null;
       body: string;
       url: string;
+      createdAt: string;
+      pullRequestReview: { databaseId: number | null } | null;
     }[];
   };
 }
@@ -29,7 +46,9 @@ interface Payload {
   } | null;
 }
 
-const QUERY = `query($owner: String!, $name: String!, $number: Int!, $limit: Int!) {
+// Read on demand, never on the sweep. Forty records at a hundred threads would
+// be forty thousand nodes a tick for a question only this screen asks.
+const QUERY = `query($owner: String!, $name: String!, $number: Int!, $limit: Int!, $comments: Int!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
       reviewThreads(first: $limit) {
@@ -39,9 +58,18 @@ const QUERY = `query($owner: String!, $name: String!, $number: Int!, $limit: Int
           isOutdated
           path
           line
-          comments(first: 1) {
+          originalLine
+          diffSide
+          comments(first: $comments) {
             totalCount
-            nodes { author { login } body url }
+            nodes {
+              databaseId
+              author { login }
+              body
+              url
+              createdAt
+              pullRequestReview { databaseId }
+            }
           }
         }
       }
@@ -60,20 +88,52 @@ const UNRESOLVE = `mutation($id: ID!) {
 }
 `;
 
-async function subject(
-  key: string,
-): Promise<{ owner: string; name: string; number: number; url?: string }> {
+async function subject(key: string): Promise<{
+  owner: string;
+  name: string;
+  number: number;
+  rounds: SubmittedReview[];
+  url?: string;
+}> {
   const state = await loadState();
   const record = state.intake.find((candidate) => candidate.key === key);
   if (!record) throw new Error("no such record");
   const [owner, name] = record.repo.split("/");
   if (!owner || !name) throw new Error(`${record.repo} is not owner/name`);
-  return { owner, name, number: record.number, url: keyUrl(key) };
+  return {
+    owner,
+    name,
+    number: record.number,
+    rounds: roundsOf(record.feedback),
+    url: keyUrl(key),
+  };
 }
 
 export interface ThreadList {
   threads: ReviewThread[];
+  posted: PostedFinding[];
   error?: string;
+}
+
+/** The thread as binding wants it, which is the same read seen differently. */
+function bindable(node: ThreadNode): BindableThread {
+  return {
+    id: node.id,
+    isResolved: node.isResolved,
+    isOutdated: node.isOutdated,
+    path: node.path,
+    diffSide: node.diffSide,
+    originalLine: node.originalLine,
+    line: node.line,
+    comments: node.comments.nodes.map((comment) => ({
+      databaseId: comment.databaseId,
+      author: comment.author?.login ?? null,
+      body: comment.body,
+      url: comment.url,
+      createdAt: comment.createdAt,
+      reviewId: comment.pullRequestReview?.databaseId ?? null,
+    })),
+  };
 }
 
 /**
@@ -88,12 +148,13 @@ export interface ThreadList {
  */
 export async function listThreads(key: string): Promise<ThreadList> {
   try {
-    const { owner, name, number } = await subject(key);
+    const { owner, name, number, rounds } = await subject(key);
     const { data, errors } = await graphql<Payload>(QUERY, {
       owner,
       name,
       number,
       limit: LIMIT,
+      comments: COMMENTS,
     });
     for (const error of errors) log(`threads ${key}: ${error.message}`);
 
@@ -101,6 +162,7 @@ export async function listThreads(key: string): Promise<ThreadList> {
     if (!nodes) {
       return {
         threads: [],
+        posted: [],
         error:
           errors[0]?.message ??
           "GitHub returned no review threads for this pull request",
@@ -129,10 +191,12 @@ export async function listThreads(key: string): Promise<ThreadList> {
         ...threads.filter((thread) => !thread.resolved),
         ...threads.filter((thread) => thread.resolved),
       ],
+      posted: bindRounds(rounds, nodes.map(bindable)),
     };
   } catch (error) {
     return {
       threads: [],
+      posted: [],
       error: error instanceof Error ? error.message : String(error),
     };
   }

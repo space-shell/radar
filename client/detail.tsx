@@ -570,13 +570,26 @@ export function Detail({
                           {/* Offered whatever the stage says, because a thread
                               can be opened by anyone at any point: the author
                               replying to a comment from round one is exactly
-                              when this is wanted, and that is not a stage. */}
+                              when this is wanted, and that is not a stage.
+
+                              Named for what is behind it. Once a round has gone
+                              out the screen leads with what each finding got,
+                              and "Review threads" would send him looking for a
+                              list he has already read. AC-AQ13. */}
                           <Pressable
                             accessibilityRole="button"
-                            accessibilityLabel={`Open the review threads for ${record.key}`}
+                            accessibilityLabel={
+                              roundsOf(record.feedback).length > 0
+                                ? `Open the replies to the review of ${record.key}`
+                                : `Open the review threads for ${record.key}`
+                            }
                             onPress={onOpenThreads}
                           >
-                            <Text style={styles.link}>Review threads</Text>
+                            <Text style={styles.link}>
+                              {roundsOf(record.feedback).length > 0
+                                ? "Replies"
+                                : "Review threads"}
+                            </Text>
                           </Pressable>
                         </>
                       ) : null}

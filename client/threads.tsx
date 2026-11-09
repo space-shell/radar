@@ -7,11 +7,15 @@ import {
 } from "@getpaseo/plugin/client/ui";
 import { useMemo } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
+import { findingAppearance } from "../shared/appearance";
 import { highlight } from "../shared/colour";
-import type { ReviewThread } from "../shared/threads";
+import { anchorLabel } from "../shared/feedback";
+import { age } from "../shared/format";
+import type { PostedFinding, ReviewThread } from "../shared/threads";
 import { ConfirmButton } from "./confirm";
 import { Prose } from "./prose";
 import { useResolveThread, useResolvingThreads, useThreads } from "./queries";
+import { FindingNode } from "./stages";
 
 type Layout = PluginScreenProps["layout"];
 
@@ -73,6 +77,16 @@ function styleSheet(theme: PluginTheme, compact: boolean) {
       fontWeight: "600" as const,
     },
     link: { color: highlight(colors.accent), fontSize: 12 },
+    refresh: { color: highlight(colors.accent), fontSize: 12 },
+    /** The author's own words, set in from the comment they answer. */
+    reply: {
+      color: colors.foreground,
+      fontSize: 13,
+      lineHeight: 18,
+      paddingLeft: 10,
+      borderLeftWidth: 2,
+      borderLeftColor: colors.border,
+    },
   };
 }
 
@@ -101,7 +115,8 @@ export function Threads({
   layout,
   onBack,
 }: ThreadsProps) {
-  const { data, isPending, error } = useThreads(recordKey);
+  const { data, isPending, isFetching, dataUpdatedAt, error, refresh } =
+    useThreads(recordKey);
   const resolve = useResolveThread(recordKey);
   const resolving = useResolvingThreads();
 
@@ -112,6 +127,11 @@ export function Threads({
 
   const threads = data?.threads ?? [];
   const open = threads.filter((thread) => !thread.resolved).length;
+  const posted = data?.posted ?? [];
+  const rounds = [...new Set(posted.map((finding) => finding.round))].sort(
+    (left, right) => right - left,
+  );
+  const readAt = data ? new Date(dataUpdatedAt).toISOString() : null;
 
   const header = (
     <View style={styles.header}>
@@ -123,6 +143,23 @@ export function Threads({
         <Text style={styles.back}>← Map</Text>
       </Pressable>
       <Prose style={styles.title}>{title}</Prose>
+      {/* The only way to re-read. The query deliberately holds no interval and
+          does not refetch on focus, because a list reordering under a half armed
+          Resolve resolves the wrong thread, and this screen now carries a second
+          set of those presses. So the re-read is a press, and it says how old
+          what is on screen already is. AC-AQ13. */}
+      {readAt ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Read the review threads again"
+          onPress={() => void refresh()}
+          disabled={isFetching}
+        >
+          <Text style={styles.refresh}>
+            {isFetching ? "Refreshing" : `Refresh · read ${age(readAt)}`}
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 
@@ -180,6 +217,84 @@ export function Threads({
     );
   };
 
+  /**
+   * One finding radar posted, and what became of it.
+   *
+   * The state is a square and a word, never colour alone, and the word is the
+   * same one `findingWord` gives the wizard, so a finding cannot read
+   * `outdated` here and something else there. AC-J3.
+   */
+  const findingCard = (finding: PostedFinding) => {
+    const threadId = finding.threadId;
+    const label = finding.line
+      ? `${finding.path}:${finding.line}`
+      : anchorLabel(finding.anchor);
+    const body =
+      finding.body.length > PREVIEW
+        ? `${finding.body.slice(0, PREVIEW).trimEnd()}...`
+        : finding.body;
+
+    return (
+      <SettingsCard key={`${finding.round}:${finding.anchor}`}>
+        <View
+          style={{
+            ...styles.thread,
+            // A rule in the state's own colour, so carried is legible from the
+            // left edge without reading a word of it.
+            borderLeftWidth: 2,
+            borderLeftColor: findingAppearance(finding.state, theme)
+              .borderColor,
+          }}
+        >
+          <FindingNode state={finding.state} theme={theme} />
+          <Prose style={styles.anchor}>{label}</Prose>
+          <Prose style={body.length > 0 ? styles.body : styles.muted}>
+            {body.length > 0
+              ? body
+              : "This comment could not be matched back to a finding."}
+          </Prose>
+          {finding.reply.length > 0 ? (
+            <Prose style={styles.reply}>
+              {finding.replier ? `${finding.replier}: ` : ""}
+              {finding.reply.length > PREVIEW
+                ? `${finding.reply.slice(0, PREVIEW).trimEnd()}...`
+                : finding.reply}
+            </Prose>
+          ) : null}
+          <View style={styles.actions}>
+            {threadId ? (
+              <ConfirmButton
+                label={finding.resolved ? "Reopen" : "Resolve"}
+                confirmLabel={finding.resolved ? "Reopen?" : "Resolve?"}
+                busyLabel={finding.resolved ? "Reopening" : "Resolving"}
+                theme={theme}
+                style={styles.action}
+                confirmStyle={styles.confirm}
+                busy={resolving.includes(threadId)}
+                disabled={resolving.includes(threadId)}
+                onConfirm={() =>
+                  resolve.mutate({
+                    id: threadId,
+                    resolved: !finding.resolved,
+                    label,
+                  })
+                }
+              />
+            ) : null}
+            {finding.url ? (
+              <ExternalLink
+                href={finding.url}
+                accessibilityLabel={`Open the thread at ${label} on GitHub`}
+              >
+                <Text style={styles.link}>Open on GitHub</Text>
+              </ExternalLink>
+            ) : null}
+          </View>
+        </View>
+      </SettingsCard>
+    );
+  };
+
   return (
     <View style={styles.screen}>
       {header}
@@ -214,6 +329,32 @@ export function Threads({
           </SettingsCard>
         ) : null}
 
+        {/* Newest round first: the one being answered right now is the one
+            worth reading, and a record with four rounds would otherwise open on
+            the oldest. Resolved findings collapse to a count rather than
+            filling the screen with work already finished. */}
+        {rounds.map((number) => {
+          const sent = posted.filter((finding) => finding.round === number);
+          const done = sent.filter((finding) => finding.state === "resolved");
+          const live = sent.filter((finding) => finding.state !== "resolved");
+          return (
+            <SettingsSection
+              key={number}
+              title={`Round ${number}`}
+              info={
+                done.length > 0
+                  ? `${live.length} of ${sent.length} still open. ${done.length} resolved.`
+                  : `${sent.length} sent, none resolved yet.`
+              }
+            >
+              {live.map(findingCard)}
+            </SettingsSection>
+          );
+        })}
+
+        {/* The unfiltered list stays, as the escape hatch. Everything above is
+            findings radar sent; this is every conversation on the pull request,
+            whoever opened it. */}
         {threads.length > 0 ? (
           <SettingsSection
             title="Review threads"
