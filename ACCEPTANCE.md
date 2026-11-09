@@ -1237,6 +1237,38 @@ lands, was a blind full re-read of a diff already read once.
       state it is in and the round it went out in, and pre-ticks none of them. The
       card names when the states were read, so it never implies live.
 
+## AR. Every state a record can reach, it can leave
+
+Three rows on the live inbox could not be acted on at all. A `dry-run` record was
+terminal: `intake` is the only writer of that state, the key is in
+`seenPullRequests` by the time it is written, so turning dry run off moves nothing
+and `addByLink` answers `already: "present"`. An `archived` record whose author
+reopened the pull request was terminal in the same way, and worse, because every
+signal that would have said so is suppressed for an archived record on purpose.
+And a record could be marked red with the reason left in the daemon log, where the
+screen cannot reach it.
+
+- [x] **AC-AR1** A Retry press is allowed on a `dry-run` record, which was
+      otherwise a state nothing could leave. The press is the only control that
+      makes an agent, and before this the only escape was to provoke a failure and
+      orphan the record on purpose to reach the control that was wanted. A dry-run
+      record has no agent and no workspace, which is the launch path's ordinary
+      case, so nothing else changes. Verified by probe.
+- [x] **AC-AR2** An archived record whose pull request is open again is returned to
+      `orphaned` by the reconciler, with the reason on the record and the moment
+      stamped, so the row lights its dot and offers the one control that can
+      rebuild the session. Read off the stored status rather than asked of GitHub,
+      like a late settle and for the same reason. Not done by widening Retry to
+      `archived`: archived rows sit in the active list, so that would stand a Retry
+      control on every finished row rather than on the one row that needs it.
+      Verified by probe.
+- [ ] **AC-AR3** No state word is written without the reason beside it. The row's
+      fault glyph and the detail footer are both keyed on `lastError` alone, so a
+      red word written without one says only that something went wrong, and the
+      sentence saying what lives in the daemon log where the screen cannot reach
+      it. The three writes inside `intake` and the one in `backfill` each carry
+      their reason now. Awaiting the app.
+
 ## Awaiting the app
 
 Every criterion below is built and typechecked. None can be ticked from here: each asserts
@@ -1254,6 +1286,7 @@ invocation command, so there is no route to them except the running app.
 | AC-AL8                         | One brief edited in Settings on the Android phone                                                               |
 | AC-AF28                        | One Cancel press on the node that press left queued                                                             |
 | AC-AF29                        | One Retry press on a record whose QA failed for a lost agent                                                    |
+| AC-AR3                         | One record taken in for a repository with no clone, read off the row rather than the log                        |
 | AC-AG9                         | Two presses made during one open turn, QA then verification                                                     |
 | AC-AH6, AC-AH7                 | One walk through a record whose findings share a line, typing in the box at each step                           |
 | AC-AE11                        | One `paseo agent kill` on an agent with a stage running                                                         |

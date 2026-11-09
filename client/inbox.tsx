@@ -287,7 +287,10 @@ export function Inbox({
     const retryable =
       record.state === "failed" ||
       record.state === "unmapped" ||
-      record.state === "orphaned";
+      record.state === "orphaned" ||
+      // Terminal without it: nothing else moves a record out of `dry-run`, not
+      // even turning dry run off. AC-AR1.
+      record.state === "dry-run";
 
     return (
       <View key={record.key} style={styles.row}>

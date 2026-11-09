@@ -107,6 +107,16 @@ export const intakeRecordSchema = z.object({
    * the desktop. AC-AC4.
    */
   seenAt: z.string().optional(),
+  /**
+   * When an archived record came back, because the author reopened the pull
+   * request and asked again.
+   *
+   * Stamped on the transition out of `archived` and never on a read, which is
+   * what makes it admissible to `activityAt`. Top level rather than inside `pr`
+   * because the reconciler writes it and `refreshStatuses` is the only writer of
+   * `pr`. AC-AR2.
+   */
+  reopenedAt: z.string().optional(),
 });
 
 /** Epoch milliseconds for the latest of some timestamps, 0 when none parses. */
@@ -124,8 +134,8 @@ function latest(times: ReadonlyArray<string | undefined>): number {
 
 /**
  * The last moment the record gained something worth a look: it arriving, a stage
- * settling, the summary landing, and the author moving the pull request on after
- * a round went out.
+ * settling, the summary landing, the author moving the pull request on after a
+ * round went out, and an archived pull request being reopened.
  *
  * Those last two are timestamps this daemon writes on a transition, not on a
  * read, and that is the only reason they are admissible. `pr.headMovedAt` moves
@@ -150,6 +160,7 @@ export function activityAt(record: IntakeRecord): number {
     record.summary?.generatedAt,
     record.pr?.headMovedAt,
     record.pr?.rerequestedAt,
+    record.reopenedAt,
     ...settled,
   ]);
 }

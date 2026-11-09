@@ -16,11 +16,26 @@ import { setupCommand } from "./setup";
 /** Keys with a retry in flight, so a double press cannot launch twice. AC-A5. */
 const inFlight = new Set<string>();
 
-/** States a retry can start from. `created` and `archived` already have an agent. */
+/**
+ * States a retry can start from.
+ *
+ * `dry-run` is here because it is otherwise terminal. Nothing else ever moves a
+ * record out of it: `intake` is the only writer of that state and the key is in
+ * `seenPullRequests` by then, so turning dry run off changes nothing for the
+ * records already taken, and `addByLink` answers `already: "present"`. Without
+ * this the only escape was to provoke a failure, orphaning the record on purpose
+ * to reach the control that was wanted. A dry-run record has no agent and no
+ * workspace, which is the launch path's ordinary case. AC-AR1.
+ *
+ * `created` already has an agent, and `archived` is a record James is done with:
+ * a reopened pull request is returned to `orphaned` by the reconciler rather
+ * than by a Retry control standing on every finished row. AC-AR2.
+ */
 const RETRYABLE: ReadonlySet<IntakeRecord["state"]> = new Set([
   "failed",
   "unmapped",
   "orphaned",
+  "dry-run",
 ]);
 
 /**

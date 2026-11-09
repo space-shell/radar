@@ -68,6 +68,12 @@ const intake = [
   record(210, { state: "orphaned", lastError: "the agent was archived or deleted", pr: status("open") }),
   // Already archived. Terminal, and never reconsidered.
   record(211, { state: "archived", pr: status("merged") }),
+  // Archived, and then the author reopened the pull request. Nothing else in
+  // the plugin moves a record out of `archived`, so without this pass the row
+  // sits there with Dismiss as its only control. AC-AR2.
+  record(212, { state: "archived", pr: status("open") }),
+  // Archived with no stored status at all. No evidence either way, so it stays.
+  record(213, { state: "archived" }),
 ];
 
 const write = (records) =>
@@ -138,6 +144,20 @@ check(said("owner/web#209 is merged, settling the orphan as archived"), "B16 the
 check(rowOf(210).state === "orphaned", "B17 an orphan on an open pull request is still a fault", rowOf(210).state);
 check(rowOf(211).state === "archived" && !said("#211"), "B18 an archived row is terminal and is not reconsidered");
 
+// ---- The reopen pass: an archive the author undid. --------------------------
+check(rowOf(212).state === "orphaned", "B19 an archived record whose pull request is open again comes back", rowOf(212).state);
+check(rowOf(212).lastError === "the pull request was reopened", "B20 and says why, which is also what draws the fault glyph", String(rowOf(212).lastError));
+check(typeof rowOf(212).reopenedAt === "string", "B21 stamped, so the row reads unread again", String(rowOf(212).reopenedAt));
+check(said("owner/web#212 was reopened, bringing it back as an orphan"), "B22 and the log says so");
+check(rowOf(213).state === "archived" && !said("#213"), "B23 an archive with no stored status is not evidence of anything");
+
+const { activityAt } = await import("../shared/inbox.ts");
+const quiet = record(214, { state: "archived" });
+check(
+  activityAt({ ...quiet, reopenedAt: new Date().toISOString() }) > activityAt(quiet),
+  "B24 the stamp counts as activity, which is what lights the dot",
+);
+
 // ---- C. The ledger. `note()` is fire and forget, so wait for the lines. ------
 // The plugin's own ISO-8601 week, not a second implementation of it. The naive
 // formula this replaced treated Sunday as the start of a week, so every Sunday it
@@ -145,7 +165,7 @@ check(rowOf(211).state === "archived" && !said("#211"), "B18 an archived row is 
 const { ledgerPath } = await import("../server/ledger.ts");
 const path = ledgerPath(new Date());
 let ledger = "";
-for (let i = 0; i < 40 && (ledger.match(/the session closed/g) ?? []).length < 4; i++) {
+for (let i = 0; i < 40 && ((ledger.match(/the session closed/g) ?? []).length < 4 || !ledger.includes("owner/web#212")); i++) {
   await new Promise((r) => setTimeout(r, 50));
   ledger = existsSync(path) ? readFileSync(path, "utf8") : "";
 }
@@ -154,6 +174,7 @@ check(ledger.includes("owner/web#201") && ledger.includes("the pull request is c
 check(!ledger.includes("owner/web#202"), "C3 a fault writes no ledger line");
 check(ledger.includes("owner/web#209"), "C3b a late settle is recorded on the same terms as a fresh one");
 check((ledger.match(/the session closed/g) ?? []).length === 4, "C4 one line per settled row, 200, 201, 203 and 209", String((ledger.match(/the session closed/g) ?? []).length));
+check(ledger.includes("the pull request was reopened, so the record is back"), "C5 and the reopen is recorded as its own kind of line", ledger);
 
 // ---- D. A second pass is a no-op, and an unreadable agent list holds. --------
 capture();

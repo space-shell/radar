@@ -130,14 +130,44 @@ export async function reconcileAgents(): Promise<void> {
     finished.set(record.key, record.pr!.state as "merged" | "closed");
   }
 
-  const keys = new Set([...lost, ...late].map((record) => record.key));
+  /*
+   * And an archive can come undone. The author reopens the pull request and asks
+   * again, and nothing anywhere moved a record out of `archived`: every signal
+   * that would have said so is suppressed for an archived record on purpose, so
+   * `unseen`, `rereviewDue` and `rerequested` all answer false and the row sits
+   * there with Dismiss as its only control. The record is returned to `orphaned`,
+   * which is retryable, so the one control that can rebuild the session appears
+   * on the row and the stamp lights the dot. Read off the stored status like
+   * `late`, and for the same reason: the search tick refreshes it anyway. AC-AR2.
+   */
+  const woken = snapshot.intake.filter(
+    (record) => record.state === "archived" && record.pr?.state === "open",
+  );
+  const backFromArchive = new Set(woken.map((record) => record.key));
+
+  const keys = new Set(
+    [...lost, ...late, ...woken].map((record) => record.key),
+  );
   if (keys.size === 0) return;
 
   const ledgerLines: Array<{ key: string; ending: string }> = [];
+  const wokenLines: string[] = [];
 
   await updateState((state) => {
     for (const record of state.intake) {
       if (!keys.has(record.key)) continue;
+
+      if (backFromArchive.has(record.key)) {
+        // Re-checked inside the lock, as every other branch here is.
+        if (record.state !== "archived") continue;
+        record.state = "orphaned";
+        record.lastError = "the pull request was reopened";
+        record.reopenedAt = new Date().toISOString();
+        wokenLines.push(record.key);
+        log(`${record.key} was reopened, bringing it back as an orphan`);
+        continue;
+      }
+
       const ending = finished.get(record.key);
 
       if (!ending) {
@@ -162,6 +192,14 @@ export async function reconcileAgents(): Promise<void> {
   });
 
   // After the write, so the ledger never claims a transition the state refused.
+  for (const key of wokenLines) {
+    note({
+      source: "github",
+      subject: key,
+      what: "the pull request was reopened, so the record is back",
+      url: keyUrl(key),
+    });
+  }
   for (const line of ledgerLines) {
     note({
       source: "github",
