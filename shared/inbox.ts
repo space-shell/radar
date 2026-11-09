@@ -254,7 +254,7 @@ function lastRound(record: IntakeRecord): SubmittedReview | undefined {
  * conservative half: it can miss a push, and cannot invent one.
  *
  * Settled rows are excluded. Merged and closed settle the row whatever happened
- * to it, and there is nothing left to re-review. AC-AQ4.
+ * to it, and there is nothing left to re-review. AC-AQ1.
  */
 export function rereviewDue(record: IntakeRecord): boolean {
   if (record.dismissedAt || record.state === "archived") return false;
@@ -283,7 +283,7 @@ export function rerequested(record: IntakeRecord): boolean {
  *
  * Kept out of `statusNote`, which answers what the pull request itself says. A
  * round is this plugin's own history, and the two are orthogonal: a pull request
- * James approved and the author then pushed to must show both. AC-AQ4.
+ * James approved and the author then pushed to must show both. AC-AQ12.
  */
 export function rereviewNote(record: IntakeRecord): string | null {
   const sent = roundsOf(record.feedback).length;
