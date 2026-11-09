@@ -1268,6 +1268,25 @@ screen cannot reach it.
       sentence saying what lives in the daemon log where the screen cannot reach
       it. The three writes inside `intake` and the one in `backfill` each carry
       their reason now. Awaiting the app.
+- [x] **AC-AR4** The refusal to type into a review already sent names the control
+      the screen is drawing. That control is named for what it does on the node,
+      not for the transition behind it: with a round out it reads `Review again`,
+      because reopening a feedback stage that has been sent starts the next round
+      rather than undoing the review already on GitHub. The refusal named the
+      transition, so it sent James to look for a `Reopen` the screen does not
+      have. Verified by probe.
+- [ ] **AC-AR5** The wizard's unavailable screen names the control the review map
+      will actually draw. A `done` QA node offers Undo or Reopen and no Run at
+      all, and the ordinary way to reach that screen is a findings file that has
+      gone while the stage still reads `done`, so `Run QA from the review map`
+      named a control that was not there. Read through `stageEvents`, which is
+      the same function the map draws from, so the two cannot drift. Awaiting the
+      app.
+- [ ] **AC-AR6** The threads screen can be read again after a read that failed,
+      which is the read most worth trying again. The press was keyed on there
+      being data to date, and a query that threw has none, so the failure removed
+      the one control that could recover from it. The age is dropped rather than
+      the press: there is nothing on screen to be old. Awaiting the app.
 
 ## Awaiting the app
 
@@ -1287,6 +1306,8 @@ invocation command, so there is no route to them except the running app.
 | AC-AF28                        | One Cancel press on the node that press left queued                                                             |
 | AC-AF29                        | One Retry press on a record whose QA failed for a lost agent                                                    |
 | AC-AR3                         | One record taken in for a repository with no clone, read off the row rather than the log                        |
+| AC-AR5                         | One wizard opened on a record whose QA is done and whose findings file has gone                                 |
+| AC-AR6                         | One threads screen opened while GitHub refuses the read                                                         |
 | AC-AG9                         | Two presses made during one open turn, QA then verification                                                     |
 | AC-AH6, AC-AH7                 | One walk through a record whose findings share a line, typing in the box at each step                           |
 | AC-AE11                        | One `paseo agent kill` on an agent with a stage running                                                         |

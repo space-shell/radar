@@ -73,9 +73,20 @@ function roundOpen(record: IntakeRecord): boolean {
   return reviewOf(record).feedback.status !== "done";
 }
 
-/** Said in one place, because three callers refuse with it. */
-const CLOSED =
-  "this review has already been submitted. Reopen the feedback stage to start another round";
+/**
+ * Said in one place, because three callers refuse with it.
+ *
+ * The control's own label, not a fixed word: `detail.tsx` draws Reopen as
+ * "Review again" once a round has gone out, because reopening a feedback stage
+ * that has already been sent is starting the next round rather than undoing the
+ * review now on GitHub. The refusal named the transition instead, so it sent
+ * James to a control the screen does not have. AC-AP11.
+ */
+function closed(record: IntakeRecord): string {
+  const control =
+    roundsOf(feedbackOf(record)).length > 0 ? "Review again" : "Reopen";
+  return `this review has already been submitted. Press ${control} on the feedback stage to start another round`;
+}
 
 async function findRecord(key: string): Promise<IntakeRecord> {
   const state = await loadState();
@@ -144,7 +155,7 @@ export async function storeDraft(
     if (!record) return { ok: false, error: "no such record" };
     // A closed round's draft is the record of what went out, so it is not typed
     // over. Reopening the stage empties it and lets the next round be written.
-    if (!roundOpen(record)) return { ok: false, error: CLOSED };
+    if (!roundOpen(record)) return { ok: false, error: closed(record) };
     record.feedback = { ...feedbackOf(record), draft };
     return { ok: true };
   });
@@ -210,7 +221,7 @@ function refusal(
   event: ReviewEvent,
   draft: Draft,
 ): string | null {
-  if (!roundOpen(record)) return CLOSED;
+  if (!roundOpen(record)) return closed(record);
   if (event === "APPROVE" && !draft.approve)
     return "the approve box is unchecked";
   if (event !== "APPROVE" && draft.body.trim().length === 0) {

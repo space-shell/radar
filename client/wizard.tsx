@@ -28,6 +28,7 @@ import type {
   FindingState,
   VerificationStep,
 } from "../shared/findings";
+import { stageEvents } from "../shared/machines/stage";
 import {
   stepLabel,
   wizardMachine,
@@ -550,13 +551,25 @@ export function Wizard({
   }
 
   if (view.matches("unavailable") && data?.error) {
+    /*
+     * The route back, named for the control the map will actually draw.
+     *
+     * A `done` QA node offers Undo or Reopen and no Run at all, so "Run QA from
+     * the review map" sent James to look for a control that was not there. The
+     * ordinary way to reach this screen is a findings file that has gone while
+     * the stage still reads `done`. Read through `stageEvents`, so the sentence
+     * cannot drift from what the map offers.
+     */
+    const offered = open ? stageEvents(open, "qa") : ["RUN"];
+    const route = offered.includes("RUN")
+      ? "Run QA from the review map, then come back."
+      : `QA has already finished, so the map offers ${offered.includes("UNDO") ? "Undo" : "Reopen"} rather than Run. Press it there, run QA again, then come back.`;
+
     return (
       <View style={styles.screen}>
         {header}
         <Prose style={styles.danger}>{data.error}</Prose>
-        <Text style={styles.muted}>
-          Run QA from the review map, then come back.
-        </Text>
+        <Text style={styles.muted}>{route}</Text>
       </View>
     );
   }
