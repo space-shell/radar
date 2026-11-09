@@ -103,6 +103,39 @@ export function reviewOf(record: { review?: Partial<Review> }): Review {
   return { ...emptyReview(), ...record.review };
 }
 
+/**
+ * What a stage records when its turn had no agent to go to.
+ *
+ * Here rather than beside the throw in `server/turn.ts` because two sides need
+ * the same string: the side that writes it, and the side that has to recognise
+ * it as spent. Both sentences end in an instruction to press Retry, so a record
+ * that has been retried would otherwise keep a node telling James to do the
+ * thing he has already done, on every visit, with nothing marking it stale.
+ */
+export const AGENT_GONE =
+  "the agent is gone. Retry the record to make a new one";
+export const NO_AGENT = "this record has no agent. Retry it to make one";
+
+/**
+ * Returns the stages whose only failure was an agent that no longer exists to
+ * `pending`, naming the ones that moved.
+ *
+ * Only those two sentences are cleared, and only from a `failed` stage. A stage
+ * that failed for a reason of its own is a true statement about work the old
+ * agent actually did, and replacing the agent is no evidence against it. AC-AF29.
+ */
+export function forgetLostTurns(review: Review): ReviewStage[] {
+  const spent = REVIEW_STAGES.filter(function (name) {
+    const stage = review[name];
+    return (
+      stage.status === "failed" &&
+      (stage.error === AGENT_GONE || stage.error === NO_AGENT)
+    );
+  });
+  for (const name of spent) review[name] = { status: "pending" };
+  return spent;
+}
+
 /** The five nodes the map draws. Dismiss is last and derived. */
 export const MAP_NODES = [...REVIEW_STAGES, "dismiss"] as const;
 export type MapNode = (typeof MAP_NODES)[number];

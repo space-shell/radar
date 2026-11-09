@@ -8,6 +8,7 @@ import {
   type AgentSpec,
   type Task,
 } from "../shared/settings";
+import { AGENT_GONE, NO_AGENT } from "../shared/review";
 import { log } from "./log";
 import { loadConfig } from "./settings";
 import { updateState } from "./state";
@@ -17,6 +18,9 @@ export type Paseo = PluginHandlerContext["paseo"];
 
 /** Twenty minutes. A review turn that has not reported by then has gone wrong. */
 export const TURN_TIMEOUT_MS = 20 * 60_000;
+
+/** Why the record was orphaned, which is the footer's half of the same fact. */
+const GONE_REASON = "the agent is gone, archived or closed";
 
 /**
  * Marks the record as having lost its agent. `orphaned` is retryable, so the row
@@ -110,8 +114,8 @@ export async function gateFor(
       // the Retry control on the row, and the sentence below is an instruction
       // to press it. Without the mark the row offers nothing and the only way
       // out of the message is to edit the state file. AC-E2, AC-AF18.
-      await orphan(record.key, "the agent is gone, archived or closed");
-      throw new Error("the agent is gone. Retry the record to make a new one");
+      await orphan(record.key, GONE_REASON);
+      throw new Error(AGENT_GONE);
     },
   };
 }
@@ -195,13 +199,13 @@ async function agentForTurn(paseo: Paseo, record: IntakeRecord, task: Task) {
   const agentId = record.agentId;
   if (!agentId) {
     await orphan(record.key, "the record has no agent");
-    throw new Error("this record has no agent. Retry it to make one");
+    throw new Error(NO_AGENT);
   }
 
   const handle = await usable(paseo, agentId);
   if (!handle) {
-    await orphan(record.key, "the agent is gone, archived or closed");
-    throw new Error("the agent is gone. Retry the record to make a new one");
+    await orphan(record.key, GONE_REASON);
+    throw new Error(AGENT_GONE);
   }
   return handle;
 }
