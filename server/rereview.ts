@@ -1,12 +1,16 @@
+import { shownState } from "../shared/appearance";
 import {
+  anchorKey,
   parseAnchor,
   placeOf,
   roundsOf,
   type SubmittedReview,
 } from "../shared/feedback";
-import type { FindingState } from "../shared/findings";
+import type { FindingState, FindingsFile, Severity } from "../shared/findings";
+import type { IntakeRecord } from "../shared/inbox";
 import type { PostedFinding } from "../shared/threads";
 import { call, githubError } from "./api";
+import { compareAnchors, type Anchors, type CommitRange } from "./diff";
 import { log } from "./log";
 import { loadState, updateState } from "./state";
 
@@ -156,6 +160,212 @@ export async function backfillCommentIds(): Promise<void> {
     live.backfill = { ...live.backfill, commentIds: 1 };
   });
   log(`comment ids backfilled: ${paired} paired, ${failed} unreadable`);
+}
+
+/** One file the new commits touched, and which of its lines they wrote. */
+export interface ScopedFile {
+  path: string;
+  /** The RIGHT side lines, compacted. Empty on a file the range only deletes from. */
+  lines: string;
+}
+
+/**
+ * How much of the pull request the next QA run should read, and why.
+ *
+ * `whole` is the answer whenever the three facts a narrowed read needs do not
+ * all hold, and it always carries a reason: a review that quietly narrows to the
+ * wrong range is worse than one that reads everything, so every fallback says
+ * out loud what it fell back from. AC-AQ7.
+ */
+export interface QaScope {
+  mode: "whole" | "commits";
+  /** The sentence the node and the ledger carry. */
+  reason: string;
+  /** The round the scope is measured from, 1-based, as `postedRounds` counts. */
+  round: number;
+  /** The round's head commit, or null when it recorded none. */
+  base: string | null;
+  /** The head as the last sweep read it, or null when no sweep has. */
+  head: string | null;
+  commits: number;
+  files: ScopedFile[];
+}
+
+/** `12-18, 44`. A set of line numbers as a person would write it. */
+function ranges(lines: Set<number>): string {
+  const sorted = [...lines].sort((left, right) => left - right);
+  const out: string[] = [];
+  let start: number | null = null;
+  let last: number | null = null;
+  for (const line of sorted) {
+    if (start === null || last === null) {
+      start = line;
+      last = line;
+      continue;
+    }
+    if (line === last + 1) {
+      last = line;
+      continue;
+    }
+    out.push(start === last ? `${start}` : `${start}-${last}`);
+    start = line;
+    last = line;
+  }
+  if (start !== null && last !== null) {
+    out.push(start === last ? `${start}` : `${start}-${last}`);
+  }
+  return out.join(", ");
+}
+
+function scopedFiles(range: CommitRange): ScopedFile[] {
+  return range.files.map((path) => {
+    const anchors: Anchors | undefined = range.anchors.get(path);
+    return { path, lines: anchors ? ranges(anchors.RIGHT) : "" };
+  });
+}
+
+/** Injected by the probes, which have no network and no business having one. */
+export type Comparer = (
+  repo: string,
+  base: string,
+  head: string,
+) => Promise<CommitRange>;
+
+/**
+ * What the next QA run should read.
+ *
+ * Null before the first round, which is the ordinary case: there is nothing to
+ * re-review, no guide file is written, and the run is byte identical to what it
+ * was before any of this existed.
+ *
+ * A base is never dated from `submittedAt` and a commit list. Two pushes in one
+ * minute picks the wrong one, and the whole point of storing `headSha` on the
+ * round is that the base is a fact rather than an inference. A round without one
+ * reads the whole diff and says so. AC-AQ7.
+ *
+ * Never throws. A comparer that cannot reach GitHub is one more reason to read
+ * the whole diff, not a reason to fail the stage.
+ */
+export async function scopeFor(
+  record: IntakeRecord,
+  compare: Comparer = compareAnchors,
+): Promise<QaScope | null> {
+  const rounds = roundsOf(record.feedback);
+  const last = rounds[rounds.length - 1];
+  if (!last) return null;
+
+  const round = rounds.length;
+  const base = last.headSha ?? null;
+  const head = record.pr?.headSha ?? null;
+  const whole = (reason: string): QaScope => ({
+    mode: "whole",
+    reason,
+    round,
+    base,
+    head,
+    commits: 0,
+    files: [],
+  });
+
+  if (!base) return whole(`round ${round} recorded no head commit`);
+  if (!head) return whole("the head commit has not been read yet");
+  if (base === head)
+    return whole(`the head has not moved since round ${round}`);
+
+  let range: CommitRange;
+  try {
+    range = await compare(record.repo, base, head);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    return whole(`the two commits could not be compared: ${detail}`);
+  }
+  if (range.fault) return whole(range.fault);
+  // Behind rather than ahead, which is a force push backwards: there is no new
+  // work to narrow to, and narrowing to nothing would review nothing.
+  if (range.commits === 0 || range.files.length === 0) {
+    return whole(`no new commits since round ${round}`);
+  }
+
+  const commits = range.commits;
+  return {
+    mode: "commits",
+    reason: `${commits} commit${commits === 1 ? "" : "s"} since round ${round}`,
+    round,
+    base,
+    head,
+    commits,
+    files: scopedFiles(range),
+  };
+}
+
+/**
+ * One finding an earlier round posted, as the next run is told about it.
+ *
+ * The body is the thread's first comment, not the finding's: `commentBody` posts
+ * James' typed replacement when he wrote one, so the thread holds what the author
+ * actually read and the findings file may hold something else entirely.
+ */
+export interface CarriedFinding {
+  path: string;
+  /** Where the thread sits now. Null once the line has left the diff. */
+  line: number | null;
+  side: string;
+  /** From the findings file, when it still holds the finding. Null otherwise. */
+  severity: Severity | null;
+  body: string;
+  round: number;
+  /** `unknown` is reported as `untouched`: both mean judge it again. AC-AQ5. */
+  outcome: Exclude<FindingState, "unknown">;
+  reply: string;
+  replier: string | null;
+  threadUrl: string;
+}
+
+/**
+ * The previous rounds, as the agent needs them.
+ *
+ * Only anchors that actually went out are here, because `posted` is built from
+ * the rounds. A finding James switched off was a decision not to say it, and
+ * handing it back to the next run would re-raise something he declined once.
+ *
+ * An entry with no body anywhere is dropped rather than carried empty. A row
+ * saying only "something was said at line 40" tells the agent to leave a finding
+ * alone without saying which, which is worse than not mentioning it.
+ *
+ * The same anchor posted twice keeps the later posting: both name the same place,
+ * and the live thread is the one the second round opened.
+ */
+export function carryFor(
+  posted: PostedFinding[],
+  previous: FindingsFile | null,
+): CarriedFinding[] {
+  const byKey = new Map<string, { severity: Severity; body: string }>();
+  for (const finding of previous?.findings ?? []) {
+    byKey.set(anchorKey(finding), {
+      severity: finding.severity,
+      body: finding.body,
+    });
+  }
+
+  const carried = new Map<string, CarriedFinding>();
+  for (const finding of posted) {
+    const known = byKey.get(finding.anchor);
+    const body = finding.body.trim() || (known?.body ?? "");
+    if (body.length === 0) continue;
+    carried.set(finding.anchor, {
+      path: finding.path,
+      line: finding.line,
+      side: parseAnchor(finding.anchor)?.side ?? "RIGHT",
+      severity: known?.severity ?? null,
+      body,
+      round: finding.round,
+      outcome: shownState(finding.state),
+      reply: finding.reply,
+      replier: finding.replier,
+      threadUrl: finding.url,
+    });
+  }
+  return [...carried.values()];
 }
 
 /**

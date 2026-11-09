@@ -38,6 +38,19 @@ export function readVerification(path: string): Promise<VerificationFile> {
 }
 
 /**
+ * Where the server tells a re-review what the last round already said.
+ *
+ * An input rather than an output, and the only one of the three files the agent
+ * does not write. It is cleared at the top of every QA run and left on disk
+ * afterwards: nothing re-adopts it, so a failed run's input stays readable, and
+ * clearing it first means a file a previous run left can never be read as this
+ * run's context.
+ */
+export function rereviewPath(repo: string, number: number): string {
+  return join(STATE_DIR, "findings", `${repo}#${number}.rereview.json`);
+}
+
+/**
  * Folds the verification run into the one file the wizard reads. The two lists stay
  * apart inside it, so a verification result can never be read as a comment
  * candidate. AC-F5.
