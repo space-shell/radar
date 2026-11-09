@@ -260,7 +260,7 @@ const writeClosed = (feedback) => writeFeedback(feedback, "done");
 await writeClosed({ draft: { ...draft, approve: true }, submitted });
 const sent = await readFeedbackState(key);
 check("E1 the legacy submission reads back as one round", sent.rounds, [
-  { ...submitted, anchors: [] },
+  { ...submitted, anchors: [], posted: [] },
 ]);
 check("E1 and no round is open", sent.open, false);
 check(
@@ -292,7 +292,14 @@ const history = [{ ...submitted, anchors: [anchorKey(findings[0])] }];
 await writeFeedback({ draft: emptyDraft(), rounds: history }, "pending");
 const reopened = await readFeedbackState(key);
 check("AP5 a reopened stage opens a round", reopened.open, true);
-check("AP5 keeping the history", reopened.rounds, history);
+// Read back with `posted` filled, for the same reason `anchors` is: the server
+// reads its state file as raw JSON, so the zod default never fires and
+// `roundsOf` is the one place that normalises. AC-AQ4.
+check(
+  "AP5 keeping the history",
+  reopened.rounds,
+  history.map((round) => ({ ...round, posted: [] })),
+);
 check("AP5 and the draft writes again", await storeDraft(key, emptyDraft()), {
   ok: true,
 });

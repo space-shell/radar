@@ -9,6 +9,31 @@ export const sideSchema = z.enum(["LEFT", "RIGHT"]);
 export type Side = z.infer<typeof sideSchema>;
 
 /**
+ * What became of a finding after its round went out.
+ *
+ * Lives here rather than beside the threads contract because three modules need
+ * it and this one imports nothing: the threads screen draws it, the feedback
+ * wizard marks a carried finding with it, and the re-review brief tells the
+ * agent what to do about each one.
+ *
+ * `outdated` is GitHub's own line-exact answer to "the code this was anchored to
+ * has changed". Nothing in radar computes a second, weaker, file-level version
+ * of that: a file-level claim dressed as a line-level one is worse than none.
+ *
+ * `unknown` is said rather than guessed. It is a thread GitHub no longer returns,
+ * or a legacy round that put two findings at one place with no comment ids to
+ * tell them apart. Readers treat it as `untouched`. AC-AQ5, AC-AQ6.
+ */
+export const findingStateSchema = z.enum([
+  "resolved",
+  "replied",
+  "outdated",
+  "untouched",
+  "unknown",
+]);
+export type FindingState = z.infer<typeof findingStateSchema>;
+
+/**
  * One candidate inline comment. Every field is required: a finding missing its
  * anchor cannot become a comment, and discovering that at submit time would mean
  * discovering it after James has already chosen to include it. AC-E6.

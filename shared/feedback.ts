@@ -2,6 +2,7 @@ import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
 import {
   findingSchema,
+  findingStateSchema,
   verificationStepSchema,
   type Finding,
 } from "./findings";
@@ -59,6 +60,34 @@ export function anchorLabel(key: string): string {
   return path.length > 0 ? `${path}:${line}` : key;
 }
 
+/**
+ * An anchor key split back into the position it names.
+ *
+ * The digest is dropped. It separates two findings at one place, and nothing
+ * outside this module can recompute it from what GitHub returns: the posted body
+ * is James' wording when he wrote any, so a digest of the comment will not match
+ * a digest of the finding.
+ *
+ * Split the way `anchorLabel` splits, for the same reason: the path is
+ * everything after the third colon and a path may hold colons of its own.
+ */
+export function parseAnchor(
+  key: string,
+): { side: string; line: number; path: string } | null {
+  const parts = key.split(":");
+  const side = parts[0];
+  const line = Number(parts[1]);
+  const path = parts.slice(3).join(":");
+  if (!side || !Number.isFinite(line) || path.length === 0) return null;
+  return { side, line, path };
+}
+
+/** The place an anchor names, the wording dropped. `side:line:path`. */
+export function placeOf(key: string): string | null {
+  const parsed = parseAnchor(key);
+  return parsed ? `${parsed.side}:${parsed.line}:${parsed.path}` : null;
+}
+
 export const draftCommentSchema = z.object({
   /** Off by default. Nothing is posted that James did not switch on. AC-G3. */
   include: z.boolean(),
@@ -92,6 +121,26 @@ export const reviewEventSchema = z.enum([
 ]);
 export type ReviewEvent = z.infer<typeof reviewEventSchema>;
 
+/**
+ * One inline comment as GitHub stored it, paired with the finding it came from.
+ *
+ * Read back with one GET after the review is created, because the POST answers
+ * with the review and not with its comments. It is what makes a later round's
+ * correlation exact: the thread's first comment carries this same id, so nothing
+ * has to be inferred from where a comment sits or from what it says.
+ *
+ * Inferring from what it says cannot work at all. `commentBody` posts James'
+ * typed replacement when he wrote one, so the posted text and the finding text
+ * are routinely different and a digest of either will not find the other.
+ */
+export const postedCommentSchema = z.object({
+  /** The REST review comment id. Equals the thread's first comment `databaseId`. */
+  id: z.number(),
+  /** The anchor key the comment was posted for. */
+  anchor: z.string(),
+});
+export type PostedComment = z.infer<typeof postedCommentSchema>;
+
 export const submittedReviewSchema = z.object({
   id: z.number(),
   url: z.string(),
@@ -109,8 +158,55 @@ export const submittedReviewSchema = z.object({
    * record. AC-AP3.
    */
   anchors: z.array(z.string()).default([]),
+  /**
+   * The head commit this review was submitted against, as GitHub reported it on
+   * the review itself. The base a re-run diffs the new commits from.
+   *
+   * Optional, and never guessed. Dating a base from `submittedAt` would pick the
+   * wrong commit on any pull request pushed to twice in a minute, and silently
+   * reviewing the wrong range is worse than reviewing the whole diff. A round
+   * without one reads the whole diff and says so. AC-AQ7.
+   */
+  headSha: z.string().optional(),
+  /**
+   * The ids GitHub gave the inline comments, in the order they were sent, which
+   * is the order `anchors` holds.
+   *
+   * Read only when it is exactly as long as `anchors`: a short list means the
+   * assumption about order or count does not hold, and a mispaired id would
+   * report one finding resolved when it was a different one. Everything else
+   * falls back to matching on path, side and the line the thread was opened at.
+   * AC-AQ6.
+   */
+  posted: z.array(postedCommentSchema).optional(),
 });
 export type SubmittedReview = z.infer<typeof submittedReviewSchema>;
+
+/**
+ * What a previous round said at one place, and what the author did about it.
+ *
+ * Stamped by the server inside the reopen that opens the next round, not read
+ * live by the wizard. The wizard holds unsaved keystrokes in a ref, so a query
+ * that can refetch under them is the same hazard as a write (AC-G6), and a
+ * GitHub call before the first finding renders is the wrong trade on a phone.
+ * `readAt` is shown, so the card never implies it is live. AC-AQ15.
+ *
+ * Display only. It changes no include switch: every one of them still starts
+ * off, carried or not. AC-G3, AC-AQ10.
+ */
+export const carriedSchema = z.object({
+  /** The anchor key the finding went out under. */
+  anchor: z.string(),
+  /** Which round first posted it, 1-based, as `postedRounds` counts. */
+  round: z.number(),
+  state: findingStateSchema,
+  /** The last reply by anyone else, trimmed. Empty unless `state` is `replied`. */
+  reply: z.string().default(""),
+  replier: z.string().nullable().default(null),
+  /** When the read behind this was taken. */
+  readAt: z.string(),
+});
+export type Carried = z.infer<typeof carriedSchema>;
 
 export const feedbackSchema = z.object({
   draft: draftSchema,
@@ -129,6 +225,12 @@ export const feedbackSchema = z.object({
    * as a one round history with no migration. AC-AP2.
    */
   submitted: submittedReviewSchema.optional(),
+  /**
+   * What the rounds above got, as of the moment this round was opened. Absent
+   * until a reopen reads it, and absent on the first round, which has nothing
+   * behind it to carry.
+   */
+  carried: z.array(carriedSchema).optional(),
 });
 export type Feedback = z.infer<typeof feedbackSchema>;
 
@@ -147,7 +249,11 @@ export function roundsOf(feedback: Feedback | undefined): SubmittedReview[] {
   // arrives without one. Filled here, which is the only place both shapes meet:
   // the readers all iterate it, and an undefined there is a crash rather than an
   // empty set.
-  return rounds.map((round) => ({ ...round, anchors: round.anchors ?? [] }));
+  return rounds.map((round) => ({
+    ...round,
+    anchors: round.anchors ?? [],
+    posted: round.posted ?? [],
+  }));
 }
 
 /**
@@ -167,6 +273,32 @@ export function postedRounds(rounds: SubmittedReview[]): Map<string, number> {
     }
   }
   return posted;
+}
+
+/**
+ * The same thing by place rather than by wording, which is what catches a
+ * reworded repeat.
+ *
+ * `anchorKey` digests the body, so a re-run that rewrites a carried finding's
+ * sentence produces a key `postedRounds` has never seen: it reads as new, and
+ * the author gets a near duplicate with no mark on it. Keyed on `side:line:path`
+ * this still says a round already spoke there.
+ *
+ * Deliberately weaker than `postedRounds` and never used in its place: two
+ * findings at one line share a place, and a place match is a hint that something
+ * was said here, not a claim that it was this. AC-AQ9.
+ */
+export function postedPlaces(rounds: SubmittedReview[]): Map<string, number> {
+  const places = new Map<string, number>();
+  for (let index = 0; index < rounds.length; index++) {
+    const round = rounds[index];
+    if (!round) continue;
+    for (const anchor of round.anchors) {
+      const place = placeOf(anchor);
+      if (place && !places.has(place)) places.set(place, index + 1);
+    }
+  }
+  return places;
 }
 
 /**

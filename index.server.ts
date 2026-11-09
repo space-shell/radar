@@ -49,6 +49,7 @@ import { reap } from "./server/reap";
 import { reconcileAgents } from "./server/reconcile";
 import { attachHooks, settleDue } from "./server/hooks";
 import { singleFlight } from "./server/single-flight";
+import { backfillCommentIds } from "./server/rereview";
 import { refreshStatuses } from "./server/status";
 import { runSummary as runSummaryFor } from "./server/summary";
 import {
@@ -183,8 +184,12 @@ async function reconcile(dryRun: boolean): Promise<void> {
 
   // Before OPEN.md, so the standing list cannot call a merged pull request open.
   // One query for the whole inbox, and a failure costs the badges, not the sweep.
-  await refreshStatuses().catch((error) =>
-    log(`statuses not read: ${String(error)}`),
+  //
+  // The request keys come from the search above rather than a second call: a key
+  // that is still listed after a round went out is the author asking again, and
+  // the sweep already knows it. AC-AQ1.
+  await refreshStatuses(new Set(open.map((request) => request.key))).catch(
+    (error) => log(`statuses not read: ${String(error)}`),
   );
 
   await updateState((state) => {
@@ -367,6 +372,12 @@ export default function contribute(server: PluginServerContext) {
   };
 
   log("started");
+  // Once, in the background, and never blocking the first tick: it is roughly one
+  // request per round already on disk, and every one of them already went out.
+  // A failure costs the ids, and the position fallback still covers that round.
+  void backfillCommentIds().catch((error) =>
+    log(`comment ids not backfilled: ${String(error)}`),
+  );
   void run();
 
   return () => {

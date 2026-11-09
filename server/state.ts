@@ -27,6 +27,15 @@ export interface RadarState {
    * of those would make a log line cost a round trip.
    */
   linearOpen: LinearOpenIssue[];
+  /**
+   * Which one-off repairs have finished. A number rather than a boolean so a
+   * later one can be added without a second key.
+   *
+   * `commentIds` 1 means every stored round that could be paired with the ids
+   * GitHub gave its comments has been. Set only on a clean pass, so a run that
+   * died partway resumes on the next start and skips the rounds it finished.
+   */
+  backfill: { commentIds?: number };
 }
 
 const DEFAULT_STATE: RadarState = {
@@ -38,6 +47,7 @@ const DEFAULT_STATE: RadarState = {
   linearSweptAt: null,
   linearSeen: [],
   linearOpen: [],
+  backfill: {},
 };
 
 /**
