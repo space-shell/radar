@@ -55,16 +55,21 @@ export interface StageGate {
  * Deliberately not `usable()`. That answers null for both "the daemon did not
  * reply" and "the agent is gone", and those have to part company here: the first
  * is no evidence of anything and the wait continues, while the second will never
- * become true and the stage has to fail rather than sit in a lane forever. R6, R9.
+ * become true and the stage cannot sit in a lane forever. R6, R9.
+ *
+ * It reports rather than throws, because what to do about a gone agent is not
+ * the same question for every lane and the caller is the only one holding the
+ * record. AC-AF18.
  */
-async function agentFree(paseo: Paseo, agentId: string): Promise<boolean> {
+async function agentFree(
+  paseo: Paseo,
+  agentId: string,
+): Promise<"free" | "wait" | "gone"> {
   const handle = paseo.agents.ref(agentId);
   const refreshed = await handle.refresh().catch(() => null);
-  if (!refreshed) return false;
-  if (handle.archivedAt || handle.status === "closed") {
-    throw new Error("the agent is gone. Retry the record to make a new one");
-  }
-  return !handle.activeTurn;
+  if (!refreshed) return "wait";
+  if (handle.archivedAt || handle.status === "closed") return "gone";
+  return handle.activeTurn ? "wait" : "free";
 }
 
 /**
@@ -89,7 +94,25 @@ export async function gateFor(
 
   return {
     agentId,
-    ready: async () => (agentId ? agentFree(paseo, agentId) : true),
+    ready: async () => {
+      if (!agentId) return true;
+      const free = await agentFree(paseo, agentId);
+      if (free !== "gone") return free === "free";
+
+      // A task agent that has gone is not a record that has lost its session:
+      // `handleFor` makes another one on the spot, exactly as it does when the
+      // id was never there. Failing the press here would send James to a Retry
+      // he does not need, and Retry rebuilds the whole workspace.
+      if (own) return true;
+
+      // The shared agent is the record's session, and losing it is the record
+      // losing its own. Marked here as well as thrown: `orphaned` is what puts
+      // the Retry control on the row, and the sentence below is an instruction
+      // to press it. Without the mark the row offers nothing and the only way
+      // out of the message is to edit the state file. AC-E2, AC-AF18.
+      await orphan(record.key, "the agent is gone, archived or closed");
+      throw new Error("the agent is gone. Retry the record to make a new one");
+    },
   };
 }
 
