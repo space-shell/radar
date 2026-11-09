@@ -1,6 +1,6 @@
 import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
-import { feedbackSchema } from "./feedback";
+import { feedbackSchema, roundsOf, type SubmittedReview } from "./feedback";
 import { REVIEW_STAGES, reviewOf, reviewSchema } from "./review";
 import { summarySchema } from "./summary";
 
@@ -23,6 +23,31 @@ export const pullRequestStatusSchema = z.object({
   /** James' own latest opinionated review, when he has left one. */
   mine: z.enum(["approved", "changes_requested"]).nullable(),
   checkedAt: z.string(),
+  /**
+   * The head commit, as of `checkedAt`. Recorded on every sweep, including the
+   * first one, which stamps nothing below.
+   */
+  headSha: z.string().optional(),
+  /**
+   * When a sweep first saw the head differ from the sha it had stored, and only
+   * ever after a round had gone out.
+   *
+   * Stamped on the change, never on the read, which is the whole of why it is
+   * allowed into `activityAt`. The first observation never stamps: without that
+   * guard every record already on disk carries no sha, so all sixty would flag
+   * on the first tick after this shipped, which is a screen full of dots rather
+   * than news. AC-AQ1.
+   */
+  headMovedAt: z.string().optional(),
+  /**
+   * When a sweep first saw James back on the review request list after a round
+   * had gone out. The author asking for another look, which is news even when
+   * nothing was pushed.
+   *
+   * Latched against the round rather than against the previous sweep, so a list
+   * that never clears costs one mark per round and not one per tick.
+   */
+  rerequestedAt: z.string().optional(),
 });
 export type PullRequestStatus = z.infer<typeof pullRequestStatusSchema>;
 
@@ -99,12 +124,20 @@ function latest(times: ReadonlyArray<string | undefined>): number {
 
 /**
  * The last moment the record gained something worth a look: it arriving, a stage
- * settling, and the summary landing.
+ * settling, the summary landing, and the author moving the pull request on after
+ * a round went out.
  *
- * Three things are deliberately not here. `pr.checkedAt` moves on every sweep and
- * would leave every record permanently unread. A skip is James' own press, so it
- * cannot be news to him. A stage merely starting is the same: he started it.
- * AC-AC5.
+ * Those last two are timestamps this daemon writes on a transition, not on a
+ * read, and that is the only reason they are admissible. `pr.headMovedAt` moves
+ * only when the fetched sha differs from the stored one and `pr.rerequestedAt`
+ * only when the request reappears after a round, so each is stamped once per
+ * event: opening the record clears the dot and it stays clear until the author
+ * does something else. AC-AQ2.
+ *
+ * Three things are still deliberately not here. `pr.checkedAt` moves on every
+ * sweep and would leave every record permanently unread. A skip is James' own
+ * press, so it cannot be news to him. A stage merely starting is the same: he
+ * started it. AC-AC5.
  */
 export function activityAt(record: IntakeRecord): number {
   const review = reviewOf(record);
@@ -112,7 +145,13 @@ export function activityAt(record: IntakeRecord): number {
     const { status, endedAt } = review[stage];
     return status === "done" || status === "failed" ? endedAt : undefined;
   });
-  return latest([record.firstSeen, record.summary?.generatedAt, ...settled]);
+  return latest([
+    record.firstSeen,
+    record.summary?.generatedAt,
+    record.pr?.headMovedAt,
+    record.pr?.rerequestedAt,
+    ...settled,
+  ]);
 }
 
 /**
@@ -192,6 +231,65 @@ export function statusNote(status?: PullRequestStatus): StatusNote | null {
     return { label: "changes requested", tone: "blocked" };
   }
   if (status.isDraft) return { label: "draft", tone: "neutral" };
+  return null;
+}
+
+/** The last round sent on this record, or undefined when none has been. */
+function lastRound(record: IntakeRecord): SubmittedReview | undefined {
+  const rounds = roundsOf(record.feedback);
+  return rounds[rounds.length - 1];
+}
+
+/**
+ * Whether the pull request has moved on since the last round went out.
+ *
+ * Two tests, and both are load bearing. The timestamp alone fires for one sweep
+ * after every submit, because `pr.headSha` is as old as the last sweep and a
+ * submit does not refresh it. The sha alone fires when the author pushed between
+ * that sweep and the submit, which GitHub already folded into the round: the
+ * review was anchored to the new head, so there is nothing new to look at.
+ * Together they fire only on a push that landed after the round.
+ *
+ * A round stored before `headSha` existed has only the timestamp, which is the
+ * conservative half: it can miss a push, and cannot invent one.
+ *
+ * Settled rows are excluded. Merged and closed settle the row whatever happened
+ * to it, and there is nothing left to re-review. AC-AQ4.
+ */
+export function rereviewDue(record: IntakeRecord): boolean {
+  if (record.dismissedAt || record.state === "archived") return false;
+  if (record.pr && record.pr.state !== "open") return false;
+  const round = lastRound(record);
+  if (!round) return false;
+  const moved = record.pr?.headMovedAt;
+  if (!moved || Date.parse(moved) <= Date.parse(round.submittedAt))
+    return false;
+  if (round.headSha && record.pr?.headSha === round.headSha) return false;
+  return true;
+}
+
+/** Whether the author has asked for another look since the last round. */
+export function rerequested(record: IntakeRecord): boolean {
+  if (record.dismissedAt || record.state === "archived") return false;
+  if (record.pr && record.pr.state !== "open") return false;
+  const round = lastRound(record);
+  const at = record.pr?.rerequestedAt;
+  if (!round || !at) return false;
+  return Date.parse(at) > Date.parse(round.submittedAt);
+}
+
+/**
+ * The row's re-review marker, or null when the last round is still the last word.
+ *
+ * Kept out of `statusNote`, which answers what the pull request itself says. A
+ * round is this plugin's own history, and the two are orthogonal: a pull request
+ * James approved and the author then pushed to must show both. AC-AQ4.
+ */
+export function rereviewNote(record: IntakeRecord): string | null {
+  const sent = roundsOf(record.feedback).length;
+  if (sent === 0) return null;
+  if (rerequested(record)) return `re-review requested, round ${sent} sent`;
+  if (rereviewDue(record)) return `pushed since round ${sent}`;
   return null;
 }
 

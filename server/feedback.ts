@@ -18,13 +18,21 @@ import { anchorFault, diffAnchors } from "./diff";
 import { findingsPath, readFindings } from "./findings";
 import { log } from "./log";
 import { removeEyes } from "./reactions";
+import { recordCommentIds } from "./rereview";
 import { runStage, type StageResult } from "./stages";
 import { loadState, updateState } from "./state";
 
-/** What GitHub sends back from a created review. */
+/**
+ * What GitHub sends back from a created review.
+ *
+ * `commit_id` is the head the review was anchored to, and is read here rather
+ * than off `record.pr`: the stored status is as old as the last sweep, and a
+ * push between the two would name a commit this review was never anchored to.
+ */
 interface ReviewResponse {
   id: number;
   html_url: string;
+  commit_id?: string;
 }
 
 interface InlineComment {
@@ -271,6 +279,15 @@ export async function submitReview(
         throw new Error(detail);
       }
 
+      // The anchors that went out, in the order the comments were sent, which is
+      // the order the read back below returns them in.
+      const sent = wanted
+        .filter(
+          (finding) =>
+            !excluded.some((fault) => fault.anchor === anchorKey(finding)),
+        )
+        .map(anchorKey);
+
       await updateState((live) => {
         const stored = live.intake.find((candidate) => candidate.key === key);
         if (!stored) return;
@@ -286,27 +303,56 @@ export async function submitReview(
               event,
               submittedAt: new Date().toISOString(),
               comments: comments.length,
-              anchors: wanted
-                .filter(
-                  (finding) =>
-                    !excluded.some(
-                      (fault) => fault.anchor === anchorKey(finding),
-                    ),
-                )
-                .map(anchorKey),
+              anchors: sent,
+              // GitHub's own answer first. `stored.pr` is a sweep old, so a push
+              // since then would name a commit this review was not anchored to.
+              // Absent rather than guessed when neither is there: a re-run reads
+              // the whole diff and says why. AC-AQ7.
+              ...((payload.commit_id ?? stored.pr?.headSha)
+                ? { headSha: payload.commit_id ?? stored.pr?.headSha }
+                : {}),
             },
           ],
         };
       });
 
+      // Appended rather than assigned, so a failed read back and a failed
+      // reaction removal do not clobber each other.
+      let warning: string | undefined;
+      const warn = (text: string) => {
+        warning = warning ? `${warning}; ${text}` : text;
+        log(`${key}: ${text}`);
+      };
+
+      // A write of its own, after the round is already on disk. The order is the
+      // point: a crash between the POST and that write leaves a review on GitHub
+      // this plugin has no record of, and `roundOpen` would offer to send it
+      // again. A crash before this one costs only the ids, and the position
+      // fallback still covers the round. AC-AQ6.
+      if (sent.length > 0) {
+        try {
+          await recordCommentIds(
+            key,
+            record.repo,
+            record.number,
+            payload.id,
+            sent,
+          );
+        } catch (error) {
+          warn(
+            `the comment ids could not be read back: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
+
       // Only now, and only on success. A failed submit leaves the pull request
       // marked as watched, which is the truth. AC-G16.
-      let warning: string | undefined;
       try {
         await removeEyes(record.repo, record.number);
       } catch (error) {
-        warning = `the eyes reaction could not be removed: ${error instanceof Error ? error.message : String(error)}`;
-        log(`${key}: ${warning}`);
+        warn(
+          `the eyes reaction could not be removed: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
 
       outcome = {
