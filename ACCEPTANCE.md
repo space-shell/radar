@@ -1122,6 +1122,108 @@ of a review that happens after it is sent outside the plugin entirely.
       write to a closed round is refused, so the exit save of a wizard sitting on a
       submitted round cannot overwrite the next one.
 
+## AQ. A review has a second round, and the plugin says what the first one got
+
+A review was one shot. Stages ran, a round went out, and the record settled. The
+author then pushed a fix, resolved a thread or answered a comment, and the plugin
+knew none of it: nothing stored a head commit, a base, or a commit count, and the
+three places that read a pull request each selected a field set that excluded
+every one of them. The second round, which is where most of a review's value
+lands, was a blind full re-read of a diff already read once.
+
+- [x] **AC-AQ1** The row marks a push that landed after the round went out, and
+      marks nothing else. It takes two facts, because either alone is wrong: the
+      timestamp fires for one sweep after every submit, since `pr.headSha` is a
+      sweep old and submitting does not refresh it, and the sha fires for a push
+      that landed before the submit, which GitHub had already folded into the
+      round. A round stored before `headSha` existed has the timestamp only,
+      which can miss a push and cannot invent one. No stage runs on its own:
+      the row is marked and waits for a press. Verified by probe on the truth
+      table, both false positives included, and live by running the sweep twice
+      over four pull requests carrying rounds: four heads recorded, no record
+      stamped on either pass. The `rerequestedAt` latch rests on submitting a
+      review clearing GitHub's pending request, read live and true: of six open
+      pull requests James has reviewed, none is still on `--review-requested=@me`.
+- [x] **AC-AQ2** Both stamps are activity, so a push puts the unread dot back on
+      the row, and opening the record clears it for good. They are admissible
+      only because each is written on a transition: `pr.checkedAt` moves every
+      sweep and folding that in would leave every record permanently unread.
+      Verified by probe, including that the sweep after the record is opened does
+      not put the dot back.
+- [x] **AC-AQ3** A finding's anchor survives a path containing a colon, in the
+      key and in the place derived from it. Every reader splits the same way or a
+      generated file named with one binds to nothing. Verified by probe.
+- [x] **AC-AQ4** A round written before the comment ids existed reads as an empty
+      list rather than as undefined. The server reads its state file as raw JSON,
+      so the schema default never fires and `roundsOf` is the one place that
+      normalises, exactly as it already does for `anchors`. Verified by probe, and
+      by reading a state file holding the old `pr` shape, a round with no head and
+      no ids, and the older `submitted` shape: all three parse with no record
+      dropped.
+- [x] **AC-AQ5** What the author did about a posted finding has one precedence
+      order, written once, so the brief, the wizard and the threads screen cannot
+      disagree. Resolved outranks an argument still running; a human's answer
+      outranks the diff having shifted; an unmatched thread says `unknown` and is
+      read everywhere as `untouched`. The opener replying to their own comment is
+      not the author answering. Verified by probe on all five.
+- [x] **AC-AQ6** A posted finding binds to its thread by the comment id GitHub
+      gave it, and only when the round captured an id for every anchor it sent. A
+      short list means the count or order assumption did not hold, so it falls
+      back to the place rather than pairing by position. Two findings at one place
+      with no ids bind neither and both report `unknown`: naming the wrong finding
+      resolved is worse than admitting it is not known. A thread opened by
+      somebody else's review is never ours to bind. Verified by probe on all four.
+- [x] **AC-AQ7** A re-run reads only the new commits, and every reason it cannot
+      is said out loud on the node and in the ledger. Six fallbacks, each with its
+      own sentence: no round, no head recorded, no head read, a head that has not
+      moved, a compare that faulted, and a range with nothing in it. A base is
+      never dated from `submittedAt` plus a commit list, because two pushes in one
+      minute picks the wrong one and silently reviewing the wrong range is worse
+      than reviewing it all. Verified by probe on every row, including that three
+      of them ask GitHub nothing, and live: `/compare` returns `patch` in the
+      shape `anchorsOf` parses, 34 files into 4458 commentable lines, with a dead
+      base giving a named fault and a reversed range giving nothing to hand over.
+- [x] **AC-AQ8** The four finding states are told apart without colour. All six
+      pairs differ in at least three of glyph, glyph colour, fill, border colour
+      and border style. `✓` is shared with the `done` stage node and is the only
+      glyph shared with any: both mean finished, and the threads screen draws no
+      stage nodes. Verified by probe. AC-AF25 holds.
+- [x] **AC-AQ9** A carried finding the agent reworded is still marked. The key is
+      the exact wording, so one word changed is a new finding to `postedRounds`
+      and the author would get a near duplicate with no mark on it. The place
+      catches it and the card says a different wording went out in round N. A
+      place says something was said here, never that it was this, so it never
+      stands in for the round mark. Verified by probe.
+- [x] **AC-AQ10** Every include switch still defaults off, carried or not. A
+      carried finding is marked, never pre-ticked, in all five states including
+      the one no thread was found for. The reopen stamps what the last round got
+      onto the record and opens an empty draft beside it. A carried finding with
+      no body on either side is dropped rather than shown as a row saying only
+      that something was said at that line. Verified by probe. AC-G3 is untouched.
+- [ ] **AC-AQ11** The marker appears within 30 seconds of a push on a record with
+      a round out, survives opening the record, and clears when the next round
+      goes out. It is not a second unread dot: the dot clears on opening, this
+      clears on the next round. Two lifetimes, two marks.
+- [ ] **AC-AQ12** A record approved and then pushed to shows `approved` and
+      `↑ new commits` together. The two answer different questions and the pair is
+      the story; either alone is the wrong one. `statusNote` is not widened to
+      carry it, because that one answers what the pull request says and a round is
+      this plugin's own history.
+- [ ] **AC-AQ13** The threads screen leads with what each posted finding got, per
+      round, with the posted body and the reply beside it, and the unfiltered
+      thread list below as the escape hatch. A Resolve press moves that finding
+      without the list reordering under the next press: the query holds no
+      interval and does not refetch on focus, so re-reading is a press that says
+      how old the screen already is.
+- [ ] **AC-AQ14** A re-run on a record whose head moved writes a scoped findings
+      file, and the node reads `N findings, M commits since round R`. A re-run on
+      a legacy round reads the whole diff and the node says why. The feedback node
+      says what moved where the press that opens the next round is, rather than
+      only on the inbox three screens away.
+- [ ] **AC-AQ15** The next round's wizard marks every carried finding with the
+      state it is in and the round it went out in, and pre-ticks none of them. The
+      card names when the states were read, so it never implies live.
+
 ## Awaiting the app
 
 Every criterion below is built and typechecked. None can be ticked from here: each asserts
@@ -1177,6 +1279,10 @@ invocation command, so there is no route to them except the running app.
 | AC-AA1, AC-AA12                | A look at the wizard's last step, approve on and then off, with one control armed, in both themes               |
 | AC-AP6, AC-AP8                 | One open of Review threads on a pull request with threads, then one Resolve and one Reopen                      |
 | AC-AP9, AC-AP11, AC-AP12       | One Review again press on a submitted record, read on the map and then in the wizard                            |
+| AC-AQ11, AC-AQ12               | The next push to a pull request with a round out, watched on the row, then opened                               |
+| AC-AQ13                        | One open of the replies screen on a record with a round out, then one Resolve                                   |
+| AC-AQ14                        | One Review again press on a record whose head has moved, read on the node and in the findings file              |
+| AC-AQ15                        | The wizard on that second round, read for the marks and the switches                                            |
 
 ## Non-goals
 
