@@ -1,5 +1,6 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { highlight, success } from "./colour";
+import type { FindingState } from "./findings";
 import { STAGE_LABELS, type DisplayStatus, type MapNode } from "./review";
 
 export interface NodeAppearance {
@@ -99,4 +100,84 @@ export function nodeLabel(node: MapNode, status: DisplayStatus): string {
 export function statusWord(status: DisplayStatus, reached: boolean): string {
   if (status !== "pending") return status;
   return reached ? "ready" : "waiting";
+}
+
+/**
+ * `unknown` is read as `untouched` by everything downstream, including the
+ * square: a thread that could not be bound and a thread nobody touched both mean
+ * judge the finding again. Said here once, so the brief, the wizard and the
+ * threads screen cannot each decide it differently. AC-AQ5.
+ */
+export function shownState(
+  state: FindingState,
+): Exclude<FindingState, "unknown"> {
+  return state === "unknown" ? "untouched" : state;
+}
+
+/**
+ * What became of a posted finding, in the same five fields the stage nodes use,
+ * so one probe shape covers both tables and neither can quietly stop differing.
+ *
+ * Four appearances, six pairs, and every pair differs in at least three of the
+ * five fields. The only glyph shared with `nodeAppearance` is `✓`, deliberately:
+ * both mean finished, and the threads screen draws no stage nodes, so the two
+ * never appear together. AC-AQ8, AC-AF25.
+ */
+export function findingAppearance(
+  state: FindingState,
+  theme: PluginTheme,
+): NodeAppearance {
+  const { colors } = theme;
+  switch (shownState(state)) {
+    case "resolved":
+      return {
+        glyph: "✓",
+        glyphColor: colors.accentForeground,
+        background: success(colors.statusSuccess),
+        borderColor: success(colors.statusSuccess),
+        borderStyle: "solid",
+      };
+    case "replied":
+      return {
+        glyph: "↩",
+        glyphColor: highlight(colors.accent),
+        background: colors.surface2,
+        borderColor: highlight(colors.accent),
+        borderStyle: "solid",
+      };
+    /*
+     * Muted and dashed, because GitHub's `isOutdated` says the code moved and
+     * not that anyone answered. It is the one state where nothing was decided.
+     */
+    case "outdated":
+      return {
+        glyph: "~",
+        glyphColor: colors.foregroundMuted,
+        background: "transparent",
+        borderColor: colors.foregroundMuted,
+        borderStyle: "dashed",
+      };
+    default:
+      return {
+        glyph: "·",
+        glyphColor: colors.statusWarning,
+        background: "transparent",
+        borderColor: colors.statusWarning,
+        borderStyle: "solid",
+      };
+  }
+}
+
+/**
+ * The state in words, so the square is never the only signal. AC-J3.
+ *
+ * Three of the five keep GitHub's own vocabulary, because the same thread on
+ * GitHub says the same word and a second name for one thing is a reader's
+ * problem. `unknown` is the exception and says what actually happened: the
+ * comment could not be matched to a finding, which is not a claim about the
+ * author.
+ */
+export function findingWord(state: FindingState): string {
+  if (state === "unknown") return "not matched";
+  return state;
 }

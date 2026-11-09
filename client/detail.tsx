@@ -38,7 +38,7 @@ import {
   useSummarisingKeys,
 } from "./queries";
 import { Connector, StageNode } from "./stages";
-import { StatusBadge } from "./status";
+import { MovedBadge, StatusBadge } from "./status";
 import { SummaryCard } from "./summary";
 
 /** Big enough for its glyph to read at arm's length, small enough for five in a column. */
@@ -638,6 +638,7 @@ export function Detail({
           }}
         >
           <StatusBadge record={record} theme={theme} />
+          <MovedBadge record={record} theme={theme} />
           <Text style={styles.footerState}>{recordMeta(record)}</Text>
         </View>
         <Prose style={styles.footerLine}>{record.key}</Prose>

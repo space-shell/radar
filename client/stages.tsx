@@ -1,7 +1,14 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { highlight } from "../shared/colour";
 import { Text, View } from "react-native";
-import { nodeAppearance, nodeLabel } from "../shared/appearance";
+import {
+  findingAppearance,
+  findingWord,
+  nodeAppearance,
+  nodeLabel,
+  type NodeAppearance,
+} from "../shared/appearance";
+import type { FindingState } from "../shared/findings";
 import {
   REVIEW_STAGES,
   currentNode,
@@ -29,8 +36,35 @@ export function StageNode({
   current = false,
   size = 14,
 }: StageNodeProps) {
-  const look = nodeAppearance(status, theme);
+  return (
+    <AppearanceNode
+      look={nodeAppearance(status, theme)}
+      theme={theme}
+      current={current}
+      size={size}
+    />
+  );
+}
 
+/**
+ * The square itself, given an appearance rather than a status.
+ *
+ * Extracted from `StageNode` rather than copied, because the threads screen
+ * draws the same square for a finding's state and two drawings of one shape
+ * drift: a radius changed on the map and not on the thread list is exactly the
+ * kind of difference nobody notices until both are on screen. AC-J10.
+ */
+export function AppearanceNode({
+  look,
+  theme,
+  current = false,
+  size = 14,
+}: {
+  look: NodeAppearance;
+  theme: PluginTheme;
+  current?: boolean;
+  size?: number;
+}) {
   return (
     <View
       style={{
@@ -51,6 +85,36 @@ export function StageNode({
         style={{ color: look.glyphColor, fontSize: Math.round(size * 0.64) }}
       >
         {look.glyph}
+      </Text>
+    </View>
+  );
+}
+
+/**
+ * A posted finding's state, as a square and a word. The word is not optional:
+ * the square alone would make colour and shape the only signals. AC-J3.
+ */
+export function FindingNode({
+  state,
+  theme,
+  size = 12,
+}: {
+  state: FindingState;
+  theme: PluginTheme;
+  size?: number;
+}) {
+  return (
+    <View
+      accessibilityLabel={`This finding is ${findingWord(state)}`}
+      style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
+    >
+      <AppearanceNode
+        look={findingAppearance(state, theme)}
+        theme={theme}
+        size={size}
+      />
+      <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>
+        {findingWord(state)}
       </Text>
     </View>
   );
