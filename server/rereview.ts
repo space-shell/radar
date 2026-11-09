@@ -1,4 +1,11 @@
-import { roundsOf, type SubmittedReview } from "../shared/feedback";
+import {
+  parseAnchor,
+  placeOf,
+  roundsOf,
+  type SubmittedReview,
+} from "../shared/feedback";
+import type { FindingState } from "../shared/findings";
+import type { PostedFinding } from "../shared/threads";
 import { call, githubError } from "./api";
 import { log } from "./log";
 import { loadState, updateState } from "./state";
@@ -149,4 +156,191 @@ export async function backfillCommentIds(): Promise<void> {
     live.backfill = { ...live.backfill, commentIds: 1 };
   });
   log(`comment ids backfilled: ${paired} paired, ${failed} unreadable`);
+}
+
+/**
+ * What binding needs from a review thread.
+ *
+ * Structural on purpose. `server/threads.ts` hands over its own nodes and this
+ * module never imports it back, so the two do not form a cycle and the binding
+ * can be probed with a literal rather than a GraphQL response.
+ */
+export interface BindableThread {
+  id: string;
+  isResolved: boolean;
+  isOutdated: boolean;
+  path: string;
+  /** GitHub's own LEFT or RIGHT, which is the vocabulary an anchor key uses. */
+  diffSide: string;
+  /** The line it was opened at, kept even after the thread goes outdated. */
+  originalLine: number | null;
+  line: number | null;
+  comments: {
+    /** The REST comment id. The first comment's is what a round stores. */
+    databaseId: number | null;
+    author: string | null;
+    body: string;
+    url: string;
+    createdAt: string;
+    /** The review that opened the thread, which equals the stored round id. */
+    reviewId: number | null;
+  }[];
+}
+
+/**
+ * What became of one thread, in the fixed order two readers cannot disagree on.
+ *
+ * `resolved` first: somebody ticked it, and that outranks an argument still
+ * running in the thread. `replied` next: a human answered, and what was said is
+ * more use than the diff having shifted underneath it. `outdated` only then, and
+ * `untouched` when none of the three holds.
+ *
+ * A reply is a comment after the first by somebody other than whoever opened the
+ * thread. James answering his own comment is not the author addressing it.
+ */
+export function outcomeOf(thread: BindableThread): {
+  state: FindingState;
+  reply: string;
+  replier: string | null;
+} {
+  const opener = thread.comments[0]?.author ?? null;
+  const answer = thread.comments
+    .slice(1)
+    .find((comment) => comment.author && comment.author !== opener);
+  const state: FindingState = thread.isResolved
+    ? "resolved"
+    : answer
+      ? "replied"
+      : thread.isOutdated
+        ? "outdated"
+        : "untouched";
+  return { state, reply: answer?.body ?? "", replier: answer?.author ?? null };
+}
+
+/** The anchor an unbound finding reports as, so the screen still has a row. */
+function unbound(anchor: string, round: number): PostedFinding {
+  const parsed = parseAnchor(anchor);
+  return {
+    anchor,
+    round,
+    state: "unknown",
+    path: parsed?.path ?? "",
+    line: parsed?.line ?? null,
+    threadId: null,
+    resolved: false,
+    url: "",
+    body: "",
+    reply: "",
+    replier: null,
+  };
+}
+
+function bound(
+  anchor: string,
+  round: number,
+  thread: BindableThread,
+): PostedFinding {
+  const { state, reply, replier } = outcomeOf(thread);
+  const first = thread.comments[0];
+  return {
+    anchor,
+    round,
+    state,
+    path: thread.path,
+    line: thread.line ?? thread.originalLine,
+    threadId: thread.id,
+    resolved: thread.isResolved,
+    url: first?.url ?? "",
+    body: first?.body ?? "",
+    reply,
+    replier,
+  };
+}
+
+/**
+ * Binds one round's anchors to the threads it opened, by comment id.
+ *
+ * Exact and self-validating: the id a round stored is the `databaseId` of the
+ * thread's first comment, so a match is a match and a miss is reported rather
+ * than guessed. Used only when the round stored an id for every anchor it sent,
+ * because a short list means the order assumption did not hold. AC-AQ6.
+ */
+function bindById(
+  round: SubmittedReview,
+  number: number,
+  threads: BindableThread[],
+): PostedFinding[] {
+  const byId = new Map<number, BindableThread>();
+  for (const thread of threads) {
+    const id = thread.comments[0]?.databaseId;
+    if (id != null) byId.set(id, thread);
+  }
+  return (round.posted ?? []).map((comment) => {
+    const thread = byId.get(comment.id);
+    return thread
+      ? bound(comment.anchor, number, thread)
+      : unbound(comment.anchor, number);
+  });
+}
+
+/**
+ * Binds by where the comment sits: side, line and path, against the round's own
+ * threads only.
+ *
+ * The fallback for every round stored before the ids were captured. It cannot
+ * use the digest in the anchor key, because `commentBody` posts James' typed
+ * replacement when he wrote one, so the posted text and the finding text
+ * routinely differ: all three anchors on Quartr-App/web#9813 missed on digest
+ * while matching exactly on the triple.
+ *
+ * A place holding more than one of either side binds neither, and both report
+ * `unknown`. Three findings at one line is a real case, and naming the wrong one
+ * resolved is worse than saying it could not be told. AC-AQ6.
+ */
+function bindByPosition(
+  round: SubmittedReview,
+  number: number,
+  threads: BindableThread[],
+): PostedFinding[] {
+  const mine = threads.filter(
+    (thread) => thread.comments[0]?.reviewId === round.id,
+  );
+  const byPlace = new Map<string, BindableThread[]>();
+  for (const thread of mine) {
+    const place = `${thread.diffSide}:${thread.originalLine}:${thread.path}`;
+    byPlace.set(place, [...(byPlace.get(place) ?? []), thread]);
+  }
+  const anchorsAt = new Map<string, number>();
+  for (const anchor of round.anchors) {
+    const place = placeOf(anchor);
+    if (place) anchorsAt.set(place, (anchorsAt.get(place) ?? 0) + 1);
+  }
+
+  return round.anchors.map((anchor) => {
+    const place = placeOf(anchor);
+    const candidates = place ? (byPlace.get(place) ?? []) : [];
+    const ours = place ? (anchorsAt.get(place) ?? 0) : 0;
+    const thread =
+      candidates.length === 1 && ours === 1 ? candidates[0] : undefined;
+    return thread ? bound(anchor, number, thread) : unbound(anchor, number);
+  });
+}
+
+/**
+ * Every finding radar posted, oldest round first, with what became of it.
+ *
+ * Rounds are numbered by their place in the submit order, which is the number
+ * the wizard and the ledger already use.
+ */
+export function bindRounds(
+  rounds: SubmittedReview[],
+  threads: BindableThread[],
+): PostedFinding[] {
+  return rounds.flatMap((round, index) => {
+    const posted = round.posted ?? [];
+    const exact = posted.length > 0 && posted.length === round.anchors.length;
+    return exact
+      ? bindById(round, index + 1, threads)
+      : bindByPosition(round, index + 1, threads);
+  });
 }
