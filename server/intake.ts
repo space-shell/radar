@@ -281,16 +281,31 @@ export async function intake(
     );
   } else {
     try {
-      const { agentId, workspaceId } = await launchIntake(
-        request,
-        checkout,
-        briefs,
-        setup,
-      );
+      /*
+       * Adopted before launched, which is what Retry already does.
+       *
+       * `seenPullRequests` is the ordinary guard against taking the same pull
+       * request in twice, but it lives in the same file as the records, so a
+       * state file lost or rolled back loses both: the next sweep reads the
+       * request as new and builds a second worktree for a pull request that
+       * already has one, with the first agent still running in it. Nothing after
+       * that ever reconciles the two, and the orphan holds a checkout of the
+       * branch for good. The labels are written by this plugin's own launch, so
+       * an agent answering this query is ours and is for this pull request.
+       * AC-AR8.
+       */
+      const existing = await resolveLaunch(request);
+      const { agentId, workspaceId } = existing.agentId
+        ? existing
+        : await launchIntake(request, checkout, briefs, setup);
       if (agentId) {
         record.agentId = agentId;
         record.workspaceId = workspaceId;
-        log(`launched ${request.key} as agent ${agentId}`);
+        log(
+          existing.agentId
+            ? `adopted the agent already running for ${request.key}: ${agentId}`
+            : `launched ${request.key} as agent ${agentId}`,
+        );
       } else {
         record.state = "failed";
         record.lastError = "launch produced no agent";

@@ -17,6 +17,7 @@ import {
 } from "../shared/feedback";
 import {
   addPullRequest,
+  forgetUnreadable,
   markSeen,
   readInbox,
   retryIntake,
@@ -38,6 +39,7 @@ const DISMISS_MUTATION = ["radar", "dismiss"];
 const STAGE_MUTATION = ["radar", "stage"];
 const ACTION_MUTATION = ["radar", "action"];
 const SUMMARY_MUTATION = ["radar", "summary"];
+const FORGET_MUTATION = ["radar", "forget"];
 const SWEEP_MUTATION = ["radar", "sweep"];
 const ADD_MUTATION = ["radar", "add"];
 const feedbackQuery = (key: string) => ["radar", "feedback", key];
@@ -126,6 +128,37 @@ export function useRetry(refresh: () => void) {
     },
     onError: (caught, key) =>
       toast.error(`Retry failed for ${shortKey(key)}: ${String(caught)}`),
+    onSettled: refresh,
+  });
+}
+
+/**
+ * Throws away one record nothing can read, so the pull request can arrive again.
+ *
+ * Both outcomes are said out loud, unlike a dismissal. There is no row to watch
+ * for a banner line vanishing, and the thing James asked for is a row coming
+ * back, which the next sweep delivers up to ten minutes later. AC-AR9.
+ */
+export function useForgetUnreadable(refresh: () => void) {
+  const forget = useRpc(forgetUnreadable);
+  const toast = useToast();
+
+  return useMutation({
+    mutationKey: FORGET_MUTATION,
+    mutationFn: (key: string) => forget({ key }),
+    onSuccess: (result, key) => {
+      if (!result.ok) {
+        toast.error(
+          `${shortKey(key)} could not be forgotten: ${result.error ?? "no reason given"}`,
+        );
+        return;
+      }
+      toast.show(`${shortKey(key)} forgotten, the next sweep can take it in`, {
+        variant: "success",
+      });
+    },
+    onError: (caught, key) =>
+      toast.error(`${shortKey(key)} could not be forgotten: ${String(caught)}`),
     onSettled: refresh,
   });
 }

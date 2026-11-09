@@ -1287,6 +1287,33 @@ screen cannot reach it.
       being data to date, and a query that threw has none, so the failure removed
       the one control that could recover from it. The age is dropped rather than
       the press: there is nothing on screen to be old. Awaiting the app.
+- [x] **AC-AR7** A background stage whose settle cannot be written logs the reason
+      and leaves the stage `running`, which is the condition `reconcileStages`
+      exists to unstick. `work`'s own faults are caught inside and turned into a
+      failed stage, but the settle that follows is not: `updateState`, `log` and
+      `ledger` all sit outside that catch, and nothing holds a background promise,
+      so an unwritable state directory was an unhandled rejection and an unhandled
+      rejection ends the daemon subprocess rather than the one stage. Verified by
+      probe, including the regression: reverting the catch turns the probe red.
+- [x] **AC-AR8** Taking a pull request in adopts the agent already running for it
+      rather than building a second worktree. `seenPullRequests` is the ordinary
+      guard against taking the same request in twice, but it lives in the same file
+      as the records, so a state file lost or rolled back loses both and the next
+      sweep reads the request as new. The orphan that made would hold a checkout of
+      the branch for good, with nothing anywhere to reconcile the two. Retry
+      already resolved before launching; intake now does the same, and the labels
+      it matches on are written by this plugin's own launch. Verified by probe.
+- [x] **AC-AR9** A record the schema refuses is named on screen, with the field that
+      refused it, and can be forgotten. The count alone was a report of something
+      James could neither see nor act on: an unparseable record draws no row, so it
+      carries no Retry and no Dismiss, and its key is already in `seenPullRequests`,
+      so no sweep would ever take the pull request in a second time. Forget removes
+      the record and the key together, because either one left behind keeps the row
+      away. The parse is re-checked inside the write lock against the same schema
+      the read used, so a record a newer schema has since made readable is refused
+      rather than destroyed. A record with no readable key keeps the banner and
+      loses the control, which is the one case only the file itself can fix.
+      Verified by probe.
 
 ## Awaiting the app
 

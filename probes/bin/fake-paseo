@@ -31,7 +31,27 @@ case "$1" in
     # the briefs it ships with.
     cat "$dir/plugins.json"
     ;;
+  run)
+    # The launch itself. Recorded rather than performed, because the one thing
+    # worth asserting about it is whether it happened at all: an intake that
+    # adopts the agent already running must not reach this.
+    shift
+    # One line per launch. The prompt is the last argument and runs to several
+    # lines, so the newlines are flattened rather than counted as launches.
+    echo "$*" | tr '\n' ' ' >> "$dir/launched.log"
+    echo >> "$dir/launched.log"
+    ;;
   workspace)
+    # `workspace ls --json`, which `resolveLaunch` reads to pair an agent's cwd
+    # with the workspace holding it. A missing fixture is an empty list.
+    if [ "$2" = "ls" ]; then
+      if [ -f "$dir/workspaces.json" ]; then
+        cat "$dir/workspaces.json"
+      else
+        echo "[]"
+      fi
+      exit 0
+    fi
     # `workspace archive <id>`
     if [ -f "$dir/archive-fails-$3" ]; then
       echo "archive refused" >&2

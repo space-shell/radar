@@ -509,7 +509,19 @@ export async function runStage(
   };
 
   if (!options.background) return perform();
-  // Nothing is waiting on this one. The stage's own status carries the outcome.
-  void perform();
+  /*
+   * Nothing is waiting on this one. The stage's own status carries the outcome.
+   *
+   * The catch is not decoration. `work`'s own faults are caught inside and turned
+   * into a failed stage, but the settle that follows is not: `updateState`,
+   * `log` and `ledger` all sit outside that inner catch, so a state file that
+   * cannot be written rejects this promise with nobody holding it, and an
+   * unhandled rejection takes the whole daemon subprocess down rather than the
+   * one stage. Logged and dropped: the stage is left `running` with no writer,
+   * which is exactly the condition `reconcileStages` exists to unstick. AC-AR7.
+   */
+  void perform().catch((error: unknown) => {
+    log(`${key} stage ${stage} could not be settled: ${String(error)}`);
+  });
   return { ok: true };
 }
