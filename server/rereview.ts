@@ -4,6 +4,7 @@ import {
   parseAnchor,
   placeOf,
   roundsOf,
+  type Carried,
   type SubmittedReview,
 } from "../shared/feedback";
 import type { FindingState, FindingsFile, Severity } from "../shared/findings";
@@ -363,6 +364,33 @@ export function carryFor(
       reply: finding.reply,
       replier: finding.replier,
       threadUrl: finding.url,
+    });
+  }
+  return [...carried.values()];
+}
+
+/**
+ * The same rounds as the wizard needs them, which is far less than the agent
+ * does.
+ *
+ * No body and no path: the wizard already draws the finding, and what it is
+ * missing is what happened to the one it drew. Stamped onto the record at the
+ * reopen and read from there, so the screen makes no GitHub call of its own.
+ *
+ * Every anchor that went out is kept, including one with no live thread behind
+ * it, because `unknown` is itself worth saying: it reads as "not matched" on the
+ * card rather than as a finding nobody ever posted. AC-AQ15.
+ */
+export function carriedOf(posted: PostedFinding[], readAt: string): Carried[] {
+  const carried = new Map<string, Carried>();
+  for (const finding of posted) {
+    carried.set(finding.anchor, {
+      anchor: finding.anchor,
+      round: finding.round,
+      state: finding.state,
+      reply: finding.reply,
+      replier: finding.replier,
+      readAt,
     });
   }
   return [...carried.values()];

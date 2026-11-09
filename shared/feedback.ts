@@ -344,6 +344,11 @@ export const readFeedback = defineRpc({
     /** Every review already sent, oldest first. Empty before the first one. */
     rounds: z.array(submittedReviewSchema),
     /**
+     * What those rounds got, as of the reopen that opened this one. Empty on a
+     * first round, and on a reopen whose read of GitHub failed.
+     */
+    carried: z.array(carriedSchema).default([]),
+    /**
      * Whether a round is open for composing. False once a review has gone out and
      * nothing has reopened the stage, which is the one thing that decides between
      * the walk and the receipt. The wizard asks this rather than counting rounds,
