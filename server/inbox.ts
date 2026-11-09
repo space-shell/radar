@@ -4,6 +4,7 @@ import {
   stillArriving,
   type IntakeRecord,
 } from "../shared/inbox";
+import { z } from "zod";
 import { takingIn } from "./add";
 import { AGENT_STAGES, reviewOf } from "../shared/review";
 import { workingAgents } from "./reconcile";
@@ -59,6 +60,23 @@ function awaitingSummary(records: IntakeRecord[]): string[] {
 }
 
 /**
+ * Why zod refused a record, in one line, with the field named.
+ *
+ * The path is the half that makes it actionable: `state: invalid enum value` can
+ * be found in the file, while `invalid enum value` on its own cannot. An issue
+ * at the root has an empty path and keeps the bare message.
+ */
+function refusal(error: z.ZodError): string {
+  return error.issues
+    .map((issue) =>
+      issue.path.length > 0
+        ? `${issue.path.join(".")}: ${issue.message}`
+        : issue.message,
+    )
+    .join("; ");
+}
+
+/**
  * The screen parses this payload against the same schema, so one malformed record
  * used to throw client-side and blank the whole inbox. Bad records are dropped here
  * and counted, because a visible gap beats an empty screen. R10.
@@ -67,7 +85,7 @@ export async function readInboxState() {
   const [config, state] = await Promise.all([loadConfig(), loadState()]);
 
   const records: IntakeRecord[] = [];
-  let unreadable = 0;
+  const unreadable: Array<{ key: string | null; reason: string }> = [];
 
   for (const candidate of state.intake) {
     const parsed = intakeRecordSchema.safeParse(candidate);
@@ -76,11 +94,12 @@ export async function readInboxState() {
       continue;
     }
 
-    unreadable += 1;
     const key = (candidate as { key?: unknown }).key;
-    log(
-      `unreadable record ${String(key)}: ${parsed.error.issues.map((i) => i.message).join("; ")}`,
-    );
+    const reason = refusal(parsed.error);
+    // Carried to the screen as well as logged. The log is on the daemon host and
+    // the screen is wherever James is, which is rarely the same machine. AC-AR9.
+    unreadable.push({ key: typeof key === "string" ? key : null, reason });
+    log(`unreadable record ${String(key)}: ${reason}`);
   }
 
   return {
@@ -117,4 +136,39 @@ export async function markRecordSeen(key: string): Promise<SeenResult> {
     ).toISOString();
     return { ok: true };
   });
+}
+
+/**
+ * Drops one record nothing can parse, and forgets its key with it.
+ *
+ * Two deletions, and both are needed. Removing the record alone leaves the key
+ * in `seenPullRequests`, which is the list that stops a sweep taking the same
+ * pull request in twice, so the row would simply never come back. Forgetting
+ * the key alone leaves the unreadable record in place, and the next intake
+ * refuses because the key is already present.
+ *
+ * The parse is re-checked inside the lock, against the same schema the read
+ * used, so a record that has since become readable is refused rather than
+ * destroyed: the only thing this can delete is a record with no row, no
+ * control and no way back. AC-AR9.
+ */
+export async function forgetUnreadableRecord(key: string): Promise<SeenResult> {
+  const result = await updateState<SeenResult>((state) => {
+    const index = state.intake.findIndex(
+      (candidate) => (candidate as { key?: unknown }).key === key,
+    );
+    if (index === -1) return { ok: false, error: "no such record" };
+    if (intakeRecordSchema.safeParse(state.intake[index]).success)
+      return { ok: false, error: "that record reads fine now, leaving it" };
+
+    state.intake.splice(index, 1);
+    state.seenPullRequests = state.seenPullRequests.filter(
+      (seen) => seen !== key,
+    );
+    return { ok: true };
+  });
+
+  if (result.ok)
+    log(`forgot the unreadable record ${key}, it can arrive again`);
+  return result;
 }

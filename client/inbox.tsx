@@ -16,6 +16,7 @@ import { age, issueKey, recordMeta, since } from "../shared/format";
 import {
   useDismiss,
   useDismissingKeys,
+  useForgetUnreadable,
   useInbox,
   useRetry,
   useRetryingKeys,
@@ -79,6 +80,14 @@ function styleSheet(theme: PluginTheme, compact: boolean) {
     },
     badgeDangerText: { color: colors.statusDanger, fontSize: 14 },
     failureBanner: { color: colors.statusDanger, fontSize: 13 },
+    unreadable: { gap: 8, paddingBottom: 8 },
+    unreadableRow: {
+      flexDirection: "row" as const,
+      alignItems: "flex-start" as const,
+      gap: 12,
+    },
+    unreadableText: { flex: 1 },
+    unreadableHint: { color: colors.foregroundMuted, fontSize: 12 },
     tabs: { flexDirection: "row" as const, gap: 16 },
     tab: { color: colors.foregroundMuted, fontSize: 13 },
     tabActive: {
@@ -145,6 +154,7 @@ export function Inbox({
   const retryMutation = useRetry(refresh);
   const dismissMutation = useDismiss(refresh);
   const sweepMutation = useSweep(refresh);
+  const forgetMutation = useForgetUnreadable(refresh);
   const retryingKeys = useRetryingKeys();
   const dismissingKeys = useDismissingKeys();
   const [showDismissed, setShowDismissed] = useState(false);
@@ -393,11 +403,11 @@ export function Inbox({
         <View style={styles.badges}>
           {data?.unreadable ? (
             <View
-              accessibilityLabel={`${data.unreadable} records could not be read`}
+              accessibilityLabel={`${data.unreadable.length} records could not be read`}
               style={styles.badgeDanger}
             >
               <Text style={styles.badgeDangerText}>
-                {data.unreadable} unreadable
+                {data.unreadable.length} unreadable
               </Text>
             </View>
           ) : null}
@@ -466,6 +476,55 @@ export function Inbox({
 
       {error ? (
         <Prose style={styles.failureBanner}>Unavailable: {String(error)}</Prose>
+      ) : null}
+
+      {/* The badge above counts these; this names them. A record the schema
+          refuses draws no row, so it has no Retry and no Dismiss, and its key is
+          already in `seenPullRequests`, so no sweep will bring it back either:
+          the count was a report of something James could neither see nor act
+          on. Forget is the way out, and the reason is here because it is what
+          says whether the file can be repaired by hand instead. AC-AR9. */}
+      {data?.unreadable.length ? (
+        <View style={styles.unreadable}>
+          <Text style={styles.unreadableHint}>
+            Forget drops the stored record and lets the next sweep take the pull
+            request in again from scratch.
+          </Text>
+          {data.unreadable.map((bad, index) => {
+            const key = bad.key;
+            return (
+              <View
+                key={key ?? `unnamed-${index}`}
+                style={styles.unreadableRow}
+              >
+                <View style={styles.unreadableText}>
+                  <Prose style={styles.failureBanner}>
+                    {key ?? "A record with no key"} could not be read:{" "}
+                    {bad.reason}
+                  </Prose>
+                </View>
+                {/* No key, no control: Forget finds the record by its key, and
+                    a record that lost its own is the one case only the file
+                    itself can fix. */}
+                {key ? (
+                  <ConfirmButton
+                    label="Forget"
+                    confirmLabel="Forget?"
+                    busyLabel="Forgetting"
+                    theme={theme}
+                    style={styles.action}
+                    confirmStyle={styles.confirm}
+                    busy={
+                      forgetMutation.isPending &&
+                      forgetMutation.variables === key
+                    }
+                    onConfirm={() => forgetMutation.mutate(key)}
+                  />
+                ) : null}
+              </View>
+            );
+          })}
+        </View>
       ) : null}
 
       <ScrollView>

@@ -26,6 +26,7 @@ import { attachSettings, readLegacyFile } from "./server/settings";
 import { configPath } from "./server/state";
 import {
   addPullRequest,
+  forgetUnreadable,
   markSeen,
   readInbox,
   retryIntake,
@@ -38,7 +39,11 @@ import {
 } from "./shared/inbox";
 import { addByLink } from "./server/add";
 import { dismissRecord, retryRecord } from "./server/actions";
-import { markRecordSeen, readInboxState } from "./server/inbox";
+import {
+  forgetUnreadableRecord,
+  markRecordSeen,
+  readInboxState,
+} from "./server/inbox";
 import { writeOpen } from "./server/ledger";
 import { stopLanes } from "./server/queue";
 import { setStageStatus } from "./server/stages";
@@ -307,6 +312,7 @@ export default function contribute(server: PluginServerContext) {
 
   server.handle(readInbox, readInboxState);
   server.handle(markSeen, ({ key }) => markRecordSeen(key));
+  server.handle(forgetUnreadable, ({ key }) => forgetUnreadableRecord(key));
   server.handle(readProviders, (_input, { paseo }) =>
     readProviderOptions(paseo),
   );

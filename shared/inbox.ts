@@ -361,6 +361,24 @@ export const markSeen = defineRpc({
   output: z.object({ ok: z.boolean(), error: z.string().optional() }),
 });
 
+/**
+ * Drops one record the server cannot parse, and forgets its key, so the next
+ * sweep takes the pull request in again from scratch.
+ *
+ * The only escape from a genuinely terminal state. An unparseable record draws
+ * no row, so it carries no Retry and no Dismiss, and its key is in
+ * `seenPullRequests`, so no sweep will ever take the pull request in a second
+ * time: it is invisible and permanent at once. Destructive, and deliberately
+ * so, but bounded to a record nothing can read. The server re-checks that the
+ * record still fails to parse inside the write lock, so this can never delete a
+ * record a newer schema has since made readable. AC-AR9.
+ */
+export const forgetUnreadable = defineRpc({
+  name: "radar.inbox.forget",
+  input: z.object({ key: z.string() }),
+  output: z.object({ ok: z.boolean(), error: z.string().optional() }),
+});
+
 export const setStage = defineRpc({
   name: "radar.stage.set",
   input: z.object({
@@ -427,8 +445,19 @@ export const readInbox = defineRpc({
   output: z.object({
     lastSearchAt: z.string().nullable(),
     dryRun: z.boolean(),
-    /** Records the server could not parse. Surfaced rather than hidden. R10. */
-    unreadable: z.number(),
+    /**
+     * Records the server could not parse, each with the key it carried and why
+     * zod refused it.
+     *
+     * Named rather than counted. A bare number told James a row was missing and
+     * gave him nothing to find it by, while both halves are already known at the
+     * drop site and cost nothing to carry. A record with no readable key is the
+     * one case that cannot be named, and it is the one case Forget cannot act
+     * on either, so the key is nullable rather than invented. AC-AR9. R10.
+     */
+    unreadable: z.array(
+      z.object({ key: z.string().nullable(), reason: z.string() }),
+    ),
     /**
      * Keys with a summary on its way: a press whose turn is still running, and a
      * record whose intake agent is still working and has written nothing yet.

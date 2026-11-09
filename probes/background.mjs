@@ -1,5 +1,5 @@
 import "./guard.mjs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, rm, writeFile } from "node:fs/promises";
 import { STATE_DIR, statePath, loadState } from "../server/state.ts";
 import { runStage } from "../server/stages.ts";
 
@@ -63,6 +63,39 @@ await sleep(100);
 await seed();
 check("Q2 foreground still waits", await runStage("o/r#1", "qa", async () => "1 finding"), { ok: true });
 check("Q2 foreground settled before returning", (await qa())?.status, "done");
+
+// AR7. A settle that cannot be written must not take the daemon with it.
+//
+// `work`'s own faults are caught inside `perform` and turned into a failed
+// stage, but the settle that follows is not: `updateState`, `log` and `ledger`
+// all sit outside that catch. Nothing holds a background promise, so a rejected
+// settle was an unhandled rejection, and an unhandled rejection ends the plugin
+// subprocess rather than the one stage. The state directory is made unwritable
+// from inside the work, which is the one window where the claim is already on
+// disk and the settle has not been written yet.
+await seed();
+let unhandled = null;
+process.on("unhandledRejection", (reason) => {
+  unhandled = String(reason);
+});
+
+const refused = await runStage(
+  "o/r#1",
+  "qa",
+  async () => {
+    await chmod(STATE_DIR, 0o555);
+    return "3 findings";
+  },
+  { background: true },
+);
+await sleep(300);
+await chmod(STATE_DIR, 0o755);
+
+check("AR7 the press is still answered", refused, { ok: true });
+check("AR7 and nothing is left unhandled", unhandled, null);
+// The settle never ran, so the claim is the last thing written. That is the
+// condition `reconcileStages` exists to unstick, on the tick.
+check("AR7 the stage is left running", (await qa())?.status, "running");
 
 console.log(failures === 0 ? "all clear" : `${failures} failures`);
 process.exit(failures === 0 ? 0 : 1);
