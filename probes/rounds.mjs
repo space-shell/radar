@@ -165,6 +165,20 @@ const ledgerLines = async () => {
     .split("\n")
     .filter((line) => line.includes(key));
 };
+// `note()` is fire and forget by design, so `setStageStatus` resolving says
+// nothing about the line being on disk yet. Poll for the one the block is about
+// rather than reading once and hoping: a single read passed only because the
+// press happened to be cheap, and it stopped passing the moment the reopen
+// gained a network read. The negative checks are then evaluated against the
+// snapshot this returns, so they are read after the write rather than before it.
+const ledgerAwaiting = async (fragment) => {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const lines = await ledgerLines();
+    if (lines.some((line) => line.includes(fragment))) return lines;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return ledgerLines();
+};
 
 {
   const typed = { ...emptyDraft(), body: "half written" };
@@ -184,7 +198,7 @@ const ledgerLines = async () => {
     live.feedback.rounds.map((r) => r.id),
     [1],
   );
-  const lines = await ledgerLines();
+  const lines = await ledgerAwaiting("feedback round 2 opened");
   check(
     "AP5 the ledger names the round rather than an undo",
     lines.some((line) => line.includes("feedback round 2 opened")),
@@ -211,7 +225,7 @@ const ledgerLines = async () => {
     (await stored()).feedback.draft,
     typed,
   );
-  const lines = await ledgerLines();
+  const lines = await ledgerAwaiting("feedback reopened");
   check(
     "AP5 the ledger says reopened, because no round went out",
     lines.some((line) => line.includes("feedback reopened")),
@@ -237,7 +251,9 @@ const ledgerLines = async () => {
   );
   check(
     "AP5 the ledger says qa reopened",
-    (await ledgerLines()).some((line) => line.includes("qa reopened")),
+    (await ledgerAwaiting("qa reopened")).some((line) =>
+      line.includes("qa reopened"),
+    ),
     true,
   );
 }
