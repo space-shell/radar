@@ -221,8 +221,12 @@ check(
 // Stored in the pre-rounds shape on purpose: one `submitted` object is what
 // every record written before group AP holds, and it has to read back as a one
 // round history with no migration. AC-AP2.
+// Named for the control the detail screen draws, which is "Review again" once a
+// round has gone out and "Reopen" only before one has. AC-AR4.
 const CLOSED =
-  "this review has already been submitted. Reopen the feedback stage to start another round";
+  "this review has already been submitted. Press Review again on the feedback stage to start another round";
+const CLOSED_FIRST =
+  "this review has already been submitted. Press Reopen on the feedback stage to start another round";
 const submitted = {
   id: 1,
   url: "https://github.com/radar-probe/none/pull/1#pullrequestreview-1",
@@ -284,6 +288,19 @@ check(
   final.intake[0].feedback.rounds,
   undefined,
 );
+
+// AR4. The refusal names the control, and the control is named for what it does
+// on this node: with a round out it reads "Review again", because reopening a
+// feedback stage that has been sent starts the next round rather than undoing
+// the review already on GitHub. A settled stage with no round behind it is the
+// only case that still reads "Reopen".
+await writeFeedback({ draft: emptyDraft() }, "done");
+check(
+  "AR4 a settled stage with no round names Reopen",
+  await storeDraft(key, emptyDraft()),
+  { ok: false, error: CLOSED_FIRST },
+);
+await writeClosed({ draft: { ...draft, approve: true }, submitted });
 
 // AP5. The stage is the flag, not the round count. The same record with the
 // feedback stage back at pending is a record with a round open, which is what

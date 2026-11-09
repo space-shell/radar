@@ -148,18 +148,28 @@ export function Threads({
           Resolve resolves the wrong thread, and this screen now carries a second
           set of those presses. So the re-read is a press, and it says how old
           what is on screen already is. AC-AQ13. */}
-      {readAt ? (
+      {isPending ? null : (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Read the review threads again"
           onPress={() => void refresh()}
           disabled={isFetching}
         >
+          {/* Drawn on a failed read as well, which is the read most worth
+              trying again. It was keyed on `readAt` alone, and a query that
+              threw has no `data`, so the one press that could recover from a
+              transient GitHub failure was removed by that failure. The age is
+              dropped rather than the press: there is nothing on screen to be
+              old. */}
           <Text style={styles.refresh}>
-            {isFetching ? "Refreshing" : `Refresh · read ${age(readAt)}`}
+            {isFetching
+              ? "Refreshing"
+              : readAt
+                ? `Refresh · read ${age(readAt)}`
+                : "Refresh"}
           </Text>
         </Pressable>
-      ) : null}
+      )}
     </View>
   );
 
