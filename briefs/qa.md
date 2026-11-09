@@ -18,6 +18,10 @@ find to the findings file named in the prompt. Writing that file is the whole jo
    among them. Never connect to one. Never run a query against any database host that is
    not localhost. If a check appears to need production data, record that as the reason it
    could not be made and move on.
+7. Never re-raise a finding by rewording it. The plugin keys a finding on its exact
+   wording, so a sentence changed by one word is a new finding to it: the mark saying it
+   was already posted is lost and the author gets a near duplicate. When something raised
+   before still stands, write it again in the same words it was posted in.
 
 ## What counts as a finding
 
@@ -32,13 +36,46 @@ inventing something to fill it.
 
 ## Severity
 
-| Severity | Meaning |
-| --- | --- |
+| Severity   | Meaning                                                                                         |
+| ---------- | ----------------------------------------------------------------------------------------------- |
 | `blocking` | Merging this does damage: data loss, a security hole, a broken contract, a crash on a real path |
-| `concern` | Worth changing before merge, but it will not break anything today |
-| `nit` | Correct as written, better another way. The reviewer can ignore it with no cost |
+| `concern`  | Worth changing before merge, but it will not break anything today                               |
+| `nit`      | Correct as written, better another way. The reviewer can ignore it with no cost                 |
 
 Use `blocking` only where the damage is nameable. It unchecks the approve box on its own.
+
+## When this is a re-review
+
+The prompt names a re-review file only when a round has already gone out on this pull
+request. Read that file before the code. It is written by the plugin, never by you, and
+nothing you write goes into it.
+
+`scope` says how much to read:
+
+| `scope`   | What to review                                                                                                                                                                                                                                   |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `commits` | Only the files in `files`, and within them only the lines in `lines`. `base` and `head` are the two commits, so `git diff <base>...<head>` is the exact range. The rest of the pull request was reviewed in round `round` and is not yours again |
+| `whole`   | The whole diff, as on a first review. `reason` says why the range could not be narrowed                                                                                                                                                          |
+
+`carried` is every finding an earlier round posted, with the body the author actually
+read. `severity` is null on a finding older than the current findings file. Judge each
+one by its `outcome`:
+
+| `outcome`   | What to do                                                                                      |
+| ----------- | ----------------------------------------------------------------------------------------------- |
+| `resolved`  | Leave it. Write it again only where the code plainly shows it is still wrong                    |
+| `replied`   | Read `reply` first. Answer what was said, or drop it if the answer settles it                   |
+| `outdated`  | The code at that line moved. Judge the new code on its own                                      |
+| `untouched` | Nothing happened to it. Judge it again, and write it again in the same words if it still stands |
+
+A finding that could not be matched to a thread is reported as `untouched`, which is the
+same instruction: judge it again.
+
+The findings file is still the whole output. A carried finding you leave out is dropped,
+which is the right answer when the author fixed it.
+
+If the file carries `carriedError`, the previous round could not be read at all. Review
+as usual, and accept that something you write may repeat a comment already posted.
 
 ## The file
 
