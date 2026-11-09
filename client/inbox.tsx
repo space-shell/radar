@@ -23,7 +23,7 @@ import {
 } from "./queries";
 import { Prose } from "./prose";
 import { StageStrip } from "./stages";
-import { StatusBadge } from "./status";
+import { MovedBadge, StatusBadge } from "./status";
 import { Threads } from "./threads";
 import { Wizard } from "./wizard";
 
@@ -321,6 +321,7 @@ export function Inbox({
             <View style={styles.metaRow}>
               <StageStrip record={record} theme={theme} />
               <StatusBadge record={record} theme={theme} />
+              <MovedBadge record={record} theme={theme} />
               <Text style={styles.meta}>{recordMeta(record)}</Text>
             </View>
           </View>
