@@ -760,6 +760,7 @@ one rule that reads `running` to tell a QA turn from a summary turn.
 - [x] **AC-AF26** Two overlapping `OPEN.md` writes both land, the file holds one whole body rather than half of each, that body is the freshest read, and no temp file survives. Every writer now renames a uniquely named temp file, and the regeneration is coalesced, so N overlapping notes cost at most one trailing rewrite and the last body written is the newest. Verified by probe.
 - [ ] **AC-AF27** Pressing Run QA while typing into the agent leaves the node reading `queued` with a Cancel control, and it starts on its own within ten seconds of the turn ending. Awaiting the app.
 - [ ] **AC-AF28** Cancel on a queued node returns it to `ready`, and no turn is ever sent. Awaiting the app.
+- [x] **AC-AF29** A Retry returns to `ready` any stage whose only failure was the agent that Retry has just replaced, and leaves every other failure standing. The two sentences both end in an instruction to press Retry, and the press is the only thing that can make them untrue: nothing else rewrites a failed stage, so before this the message stood on the node for good and read, to a record that had just been retried, as an instruction to retry it again. Reported live on `Quartr-App/web#9813` as the error constantly reappearing. Verified by probe.
 
 ## AG. A stage is offered the moment it can be queued
 
@@ -1252,6 +1253,7 @@ invocation command, so there is no route to them except the running app.
 | AC-AL7                         | One comment typed into the wizard on the Android phone                                                          |
 | AC-AL8                         | One brief edited in Settings on the Android phone                                                               |
 | AC-AF28                        | One Cancel press on the node that press left queued                                                             |
+| AC-AF29                        | One Retry press on a record whose QA failed for a lost agent                                                    |
 | AC-AG9                         | Two presses made during one open turn, QA then verification                                                     |
 | AC-AH6, AC-AH7                 | One walk through a record whose findings share a line, typing in the box at each step                           |
 | AC-AE11                        | One `paseo agent kill` on an agent with a stage running                                                         |

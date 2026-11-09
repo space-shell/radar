@@ -4,7 +4,7 @@ import {
   resolveLaunch,
   type LaunchTarget,
 } from "./intake";
-import { reviewOf } from "../shared/review";
+import { forgetLostTurns, reviewOf } from "../shared/review";
 import { withdrawAcknowledgement } from "./acknowledge";
 import { discoverCheckouts } from "./repos";
 import { keyUrl, note as ledger } from "./ledger";
@@ -22,6 +22,24 @@ const RETRYABLE: ReadonlySet<IntakeRecord["state"]> = new Set([
   "unmapped",
   "orphaned",
 ]);
+
+/**
+ * Drops the stage failures that were only ever about the agent this retry has
+ * just replaced, so the node stops instructing a Retry that has happened.
+ *
+ * The press is the thing that made those sentences untrue, and nothing else
+ * ever rewrites a failed stage: without this the message stands on the record
+ * for good. Observed on `Quartr-App/web#9813`.
+ */
+function clearLostTurns(record: IntakeRecord): void {
+  const review = reviewOf(record);
+  const spent = forgetLostTurns(review);
+  if (spent.length === 0) return;
+  record.review = review;
+  log(
+    `${record.key}: ${spent.join(" and ")} lost the old agent, back to ready`,
+  );
+}
 
 /** Applies one change to one record inside the write lock. */
 async function mutateRecord(
@@ -80,6 +98,7 @@ export async function retryRecord(key: string): Promise<RetryResult> {
         fresh.agentId = existing.agentId;
         fresh.workspaceId = existing.workspaceId;
         delete fresh.lastError;
+        clearLostTurns(fresh);
       });
       log(`retry adopted existing agent ${existing.agentId} for ${key}`);
       ledger({
@@ -126,6 +145,7 @@ export async function retryRecord(key: string): Promise<RetryResult> {
       // worktree that no longer holds this pull request.
       delete fresh.taskAgents;
       delete fresh.lastError;
+      clearLostTurns(fresh);
     });
     log(`retry launched ${key} as agent ${agentId}`);
     ledger({

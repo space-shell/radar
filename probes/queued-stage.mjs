@@ -42,6 +42,8 @@ const { lanesBlocked, stopLanes } = await import("../server/queue.ts");
 const { findingsPath, inFindingsLane, verificationPath } =
   await import("../server/findings.ts");
 const { runVerification } = await import("../server/verification.ts");
+const { AGENT_GONE, NO_AGENT, forgetLostTurns, emptyReview } =
+  await import("../shared/review.ts");
 
 let failures = 0;
 const check = (name, got, want) => {
@@ -821,6 +823,53 @@ check(
   [writes, 1],
 );
 check("AG6 no lane is left blocked", lanesBlocked(), 0);
+
+// AF29. The sentence instructs a Retry, and the press that answers it is the
+// only thing that can make it untrue: nothing else ever rewrites a failed
+// stage, so without this the message stands on the node for good and reads, to
+// a record that has just been retried, as an instruction to retry it again.
+const lostQa = {
+  ...emptyReview(),
+  qa: { status: "failed", endedAt: "t", error: AGENT_GONE },
+};
+check(
+  "AF29 a retry forgets the stage that lost its agent",
+  forgetLostTurns(lostQa),
+  ["qa"],
+);
+check("AF29 and leaves it ready, with no error", lostQa.qa, {
+  status: "pending",
+});
+
+const lostBoth = {
+  ...emptyReview(),
+  qa: { status: "failed", error: NO_AGENT },
+  verification: { status: "failed", error: AGENT_GONE },
+};
+check("AF29 both sentences count, in stage order", forgetLostTurns(lostBoth), [
+  "qa",
+  "verification",
+]);
+
+// The other half, and the reason this is two strings rather than "any failure":
+// a stage that failed on its own account is a true statement about work the old
+// agent actually did, and replacing the agent is no evidence against it.
+const realFault = {
+  ...emptyReview(),
+  qa: { status: "failed", error: "the findings file did not parse" },
+};
+check("AF29 a real failure is left standing", forgetLostTurns(realFault), []);
+check(
+  "AF29 with its error intact",
+  realFault.qa.error,
+  "the findings file did not parse",
+);
+
+// A done stage carrying the wording cannot happen, but the guard is on `failed`
+// rather than on the string alone, so say so.
+const doneQa = { ...emptyReview(), qa: { status: "done", error: AGENT_GONE } };
+check("AF29 only a failed stage is forgotten", forgetLostTurns(doneQa), []);
+check("AF29 a clean review moves nothing", forgetLostTurns(emptyReview()), []);
 
 stopLanes("the probe ended");
 __setSettingsForTest(null);
