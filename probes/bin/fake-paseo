@@ -41,6 +41,22 @@ case "$1" in
     echo "$*" | tr '\n' ' ' >> "$dir/launched.log"
     echo >> "$dir/launched.log"
     ;;
+  agent)
+    # `agent reload <id>`, the restart a closed agent needs before it can take
+    # a turn. Every attempt is recorded, because what several probes assert is
+    # how many times it happened: a lane polling a closed agent must not mean
+    # a reload per poll.
+    if [ "$2" = "reload" ]; then
+      echo "$3" >> "$dir/reloaded.log"
+      if [ -f "$dir/reload-fails-$3" ]; then
+        echo "reload refused" >&2
+        exit 1
+      fi
+      exit 0
+    fi
+    echo "unexpected argv: $*" >&2
+    exit 2
+    ;;
   workspace)
     # `workspace ls --json`, which `resolveLaunch` reads to pair an agent's cwd
     # with the workspace holding it. A missing fixture is an empty list.

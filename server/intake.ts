@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { execCommand } from "@getpaseo/plugin/server";
+import { reviveAgent } from "./agent";
 import { clearArtifact, prepareArtifact } from "./artifact";
 import { briefPath } from "./briefs";
 import type { ReviewRequest } from "./github";
@@ -119,11 +120,27 @@ async function lookupJson<T>(args: string[]): Promise<T[]> {
   return Array.isArray(parsed) ? (parsed as T[]) : [];
 }
 
+/**
+ * The agent already running for this pull request, if there is one that can
+ * still be given a turn.
+ *
+ * The status check is the half that was missing. `paseo ls` excludes archived
+ * agents but not closed ones, and a closed agent is the ordinary case: the
+ * daemon stops the provider process when an agent goes quiet. Adopting one is
+ * right, which is why the closed branch restarts it rather than walking past
+ * it, but adopting one that will not restart is what made Retry a circle:
+ * the press wrote `created` and the next press of Run read `gone` and wrote
+ * `orphaned`, for as long as James was willing to keep pressing.
+ */
 export async function resolveLaunch(target: {
   repo: string;
   number: number;
 }): Promise<LaunchResult> {
-  const agents = await lookupJson<{ id?: string; cwd?: string }>([
+  const agents = await lookupJson<{
+    id?: string;
+    cwd?: string;
+    status?: string;
+  }>([
     "ls",
     "--global",
     "--label",
@@ -132,8 +149,16 @@ export async function resolveLaunch(target: {
     `repo=${target.repo}`,
     "--json",
   ]);
-  const agent = agents.at(-1);
+  const candidates = agents.filter((entry) => entry.id && entry.cwd);
+  // A running process beats one that has to be restarted, whichever is newer.
+  const agent =
+    candidates.findLast((entry) => entry.status !== "closed") ??
+    candidates.at(-1);
   if (!agent?.id || !agent.cwd) return {};
+  if (agent.status === "closed" && !(await reviveAgent(agent.id))) {
+    log(`${target.repo}#${target.number}: ${agent.id} will not restart`);
+    return {};
+  }
 
   const cwd = absolute(agent.cwd);
   const workspaces = await lookupJson<{ workspaceId?: string; cwd?: string }>([

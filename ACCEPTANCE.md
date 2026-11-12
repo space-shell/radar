@@ -1315,6 +1315,58 @@ screen cannot reach it.
       loses the control, which is the one case only the file itself can fix.
       Verified by probe.
 
+- [x] **AC-AR10** A record whose agent reads `closed` is given its turn, because
+      `closed` is the resting state of a Paseo agent and not its death. The daemon
+      ends the provider process when an agent goes quiet and keeps the session, so
+      37 of this machine's 41 agents read `closed` while every one of them still
+      holds its whole timeline. Reading that word as "gone" made the second round
+      on a pull request unreachable: Run QA orphaned the record, Retry adopted the
+      same closed agent and wrote `created`, and the next Run orphaned it again,
+      with nothing on any screen able to break the circle. `paseo agent reload` is
+      the only surface for the restart, since `PaseoAgentHandle` carries none and
+      the daemon client exposes only `reloadDaemonConfig` and `reloadPlugin`, so it
+      is shelled out to exactly as `inspectAgent` is. The press that found the
+      agent asleep is the press that wakes it: no terminal command, no second
+      press. Verified by probe.
+- [x] **AC-AR11** An agent the daemon would not answer for keeps its record. A
+      failed refresh is no evidence of anything, and the three outcomes of one look
+      are `live`, `unreadable` and `gone` rather than two, so a hiccup can never be
+      read as a lost session. The press is refused with a sentence about the read
+      rather than about the record:
+      `the agent could not be read just now. Press again`.
+      The record stays `created`. The same holds for a task agent:
+      an unreadable one is not replaced, because a second agent in a workspace is
+      not undone by pressing again. R6, R9. Verified by probe.
+- [x] **AC-AR12** A restart that is refused is attempted once and then believed for
+      five minutes. A queued stage asks whether its agent can take a turn every few
+      seconds, and that question now runs `paseo agent reload` for a closed agent,
+      so without the cooldown one agent the daemon cannot restart would mean one
+      subprocess per poll for as long as the lane waits. Concurrent looks at one
+      agent share a single attempt for the same reason in the other direction: a
+      second reload would kill the process the first just started. The press that
+      found an agent that will not come back fails, and says so on the record,
+      because an agent that cannot restart will never be free. Verified by probe.
+- [x] **AC-AR13** An archived agent is gone without a restart being attempted.
+      Archiving is a decision someone made, and `paseo agent reload` would undo it.
+      Verified by probe.
+- [x] **AC-AR14** Taking a pull request in prefers an agent that is still running,
+      wakes a closed one, and adopts neither when the wake is refused. `paseo ls`
+      excludes archived agents and not closed ones, so every candidate AC-AR8
+      adopts is one whose status went unread: adopting an id that cannot take a
+      turn writes `created` onto the record and the next press writes `orphaned`,
+      which is the circle itself. Refusing to adopt returns the launch to a fresh
+      one, so Retry makes a new agent rather than re-adopting the dead one. An
+      agent list reporting no status at all is an older CLI and is adopted the way
+      it was before the status existed. Verified by probe.
+- [x] **AC-AR15** A just-woken agent that reads `initializing` is waited for rather
+      than sent to, up to twenty seconds. `initializing` is an agent that has
+      started and cannot take a prompt yet, so sending into it loses the turn
+      instead of delaying it. The wait lives beside the restart rather than at the
+      three call sites, every one of which wants a handle it can send to, and it
+      holds the event loop while it runs: an unref'd timer that is the only thing
+      left lets the process exit mid-wait and the press never settles at all, which
+      is a hang rather than a failure. Verified by probe.
+
 ## Awaiting the app
 
 Every criterion below is built and typechecked. None can be ticked from here: each asserts

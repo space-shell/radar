@@ -9,6 +9,7 @@ import {
   type Task,
 } from "../shared/settings";
 import { AGENT_GONE, NO_AGENT } from "../shared/review";
+import { reviveAgent } from "./agent";
 import { log } from "./log";
 import { loadConfig } from "./settings";
 import { updateState } from "./state";
@@ -20,7 +21,28 @@ export type Paseo = PluginHandlerContext["paseo"];
 export const TURN_TIMEOUT_MS = 20 * 60_000;
 
 /** Why the record was orphaned, which is the footer's half of the same fact. */
-const GONE_REASON = "the agent is gone, archived or closed";
+const GONE_REASON = "the agent is gone: archived, or it would not restart";
+
+/** A read that failed is not a record that lost its session, so it says so. */
+const UNREADABLE = "the agent could not be read just now. Press again";
+
+/** How long a just-restarted agent is given to finish starting. */
+const SETTLE_MS = 20_000;
+const SETTLE_STEP_MS = 1_000;
+
+/**
+ * Deliberately not `.unref()`'d, unlike the one in `server/stages.ts`. That one
+ * is always the losing half of a `Promise.race`, so something else is holding
+ * the loop open; this one is awaited alone. An unref'd timer that is the only
+ * thing left lets the process exit mid-wait, and the press that was waiting on
+ * it never settles at all: a hang rather than a failure. One second of held
+ * event loop during shutdown is the cheaper side of that trade.
+ */
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
 
 /**
  * Marks the record as having lost its agent. `orphaned` is retryable, so the row
@@ -36,14 +58,79 @@ async function orphan(key: string, reason: string): Promise<void> {
   log(`${key} marked orphaned: ${reason}`);
 }
 
-/** An agent that can still be sent a turn, or null if this one is past use. */
-async function usable(paseo: Paseo, agentId: string) {
+/** The handle `paseo.agents.ref` answers with. The SDK exports no name for it. */
+type AgentHandle = ReturnType<Paseo["agents"]["ref"]>;
+
+/**
+ * What one look at an agent establishes.
+ *
+ * Three outcomes rather than two, because "the daemon did not answer" and
+ * "this agent is past use" have to part company everywhere, not just in the
+ * lane. The first is no evidence of anything and a record must survive it; the
+ * second will never become true. R6, R9.
+ */
+type Reading =
+  | { kind: "live"; handle: AgentHandle }
+  | { kind: "unreadable" }
+  | { kind: "gone" };
+
+interface AgentFacts {
+  archived: boolean;
+  status: string | null;
+  handle: AgentHandle;
+}
+
+/** One refresh, or null when the daemon said nothing. */
+async function readAgent(
+  paseo: Paseo,
+  agentId: string,
+): Promise<AgentFacts | null> {
   const handle = paseo.agents.ref(agentId);
   // A `ref` handle reads null for everything until something delivers a snapshot.
   const refreshed = await handle.refresh().catch(() => null);
   if (!refreshed) return null;
-  if (handle.archivedAt || handle.status === "closed") return null;
-  return handle;
+  return { archived: handle.archivedAt != null, status: handle.status, handle };
+}
+
+/**
+ * The agent this id names, restarted first if Paseo had closed its process.
+ *
+ * `closed` is the resting state of a Paseo agent, not its death: the daemon
+ * ends the provider process when an agent goes quiet and keeps the session, so
+ * most agents on a machine read `closed` while still holding their whole
+ * timeline. Reading that as "gone" is what turned the ordinary second round on
+ * a pull request into an orphaned record, and then into a Retry that adopted
+ * the same closed agent and orphaned it again on the next press, with nothing
+ * on any screen able to break the circle.
+ *
+ * Reviving from inside what the queue treats as a predicate is deliberate. The
+ * lane's whole job is to get the turn sent, and a restart is what the turn
+ * needs; the alternative is a screen that says "gone" and means "asleep". It is
+ * attempted once per look, deduplicated and rate limited inside `reviveAgent`,
+ * so a lane asking every few seconds cannot become a reload every few seconds.
+ */
+async function liveAgent(paseo: Paseo, agentId: string): Promise<Reading> {
+  const facts = await readAgent(paseo, agentId);
+  if (!facts) return { kind: "unreadable" };
+  if (facts.archived) return { kind: "gone" };
+  if (facts.status !== "closed") return { kind: "live", handle: facts.handle };
+
+  log(`${agentId} is closed, restarting it`);
+  if (!(await reviveAgent(agentId))) return { kind: "gone" };
+
+  // `initializing` is an agent that has started and cannot take a prompt yet,
+  // so the wait lives here rather than at the three call sites, every one of
+  // which wants a handle it can send to.
+  const deadline = Date.now() + SETTLE_MS;
+  for (;;) {
+    const back = await readAgent(paseo, agentId);
+    if (!back) return { kind: "unreadable" };
+    if (back.archived || back.status === "closed") return { kind: "gone" };
+    if (back.status !== "initializing")
+      return { kind: "live", handle: back.handle };
+    if (Date.now() >= deadline) return { kind: "unreadable" };
+    await wait(SETTLE_STEP_MS);
+  }
 }
 
 /** What `runStage` needs to queue a stage behind whatever the agent is doing. */
@@ -56,10 +143,8 @@ export interface StageGate {
 /**
  * Whether the agent would take a turn right now.
  *
- * Deliberately not `usable()`. That answers null for both "the daemon did not
- * reply" and "the agent is gone", and those have to part company here: the first
- * is no evidence of anything and the wait continues, while the second will never
- * become true and the stage cannot sit in a lane forever. R6, R9.
+ * An unreadable agent waits rather than failing: the daemon not answering is
+ * no evidence of anything, and the stage must not be failed on it. R6, R9.
  *
  * It reports rather than throws, because what to do about a gone agent is not
  * the same question for every lane and the caller is the only one holding the
@@ -69,11 +154,10 @@ async function agentFree(
   paseo: Paseo,
   agentId: string,
 ): Promise<"free" | "wait" | "gone"> {
-  const handle = paseo.agents.ref(agentId);
-  const refreshed = await handle.refresh().catch(() => null);
-  if (!refreshed) return "wait";
-  if (handle.archivedAt || handle.status === "closed") return "gone";
-  return handle.activeTurn ? "wait" : "free";
+  const reading = await liveAgent(paseo, agentId);
+  if (reading.kind === "unreadable") return "wait";
+  if (reading.kind === "gone") return "gone";
+  return reading.handle.activeTurn ? "wait" : "free";
 }
 
 /**
@@ -178,6 +262,10 @@ async function createTaskAgent(
  * the record losing its session, so the record is orphaned and only Retry may
  * make another. A task agent going missing costs nothing but the turn it was
  * holding: it is replaced in place and the record is left alone.
+ *
+ * Neither half orphans on an unreadable agent. A daemon that did not answer is
+ * not a record that lost its session, and nor is it grounds for a second task
+ * agent in the same workspace: both are undone by pressing again.
  */
 async function agentForTurn(paseo: Paseo, record: IntakeRecord, task: Task) {
   const settings = await loadConfig();
@@ -185,15 +273,18 @@ async function agentForTurn(paseo: Paseo, record: IntakeRecord, task: Task) {
   if (needsOwnAgent(settings, task) && record.workspaceId) {
     const spec = agentFor(settings, task);
     const existing = record.taskAgents?.[task];
-    const live = existing ? await usable(paseo, existing) : null;
-    if (live) return live;
-    if (existing)
+    if (existing) {
+      const reading = await liveAgent(paseo, existing);
+      if (reading.kind === "live") return reading.handle;
+      if (reading.kind === "unreadable") throw new Error(UNREADABLE);
       log(`${record.key}: the ${task} agent is gone, making another`);
+    }
 
     const created = await createTaskAgent(paseo, record, task, spec);
-    const handle = await usable(paseo, created);
-    if (!handle) throw new Error(`the new ${task} agent could not be read`);
-    return handle;
+    const fresh = await liveAgent(paseo, created);
+    if (fresh.kind !== "live")
+      throw new Error(`the new ${task} agent could not be read`);
+    return fresh.handle;
   }
 
   const agentId = record.agentId;
@@ -202,12 +293,13 @@ async function agentForTurn(paseo: Paseo, record: IntakeRecord, task: Task) {
     throw new Error(NO_AGENT);
   }
 
-  const handle = await usable(paseo, agentId);
-  if (!handle) {
+  const reading = await liveAgent(paseo, agentId);
+  if (reading.kind === "unreadable") throw new Error(UNREADABLE);
+  if (reading.kind === "gone") {
     await orphan(record.key, GONE_REASON);
     throw new Error(AGENT_GONE);
   }
-  return handle;
+  return reading.handle;
 }
 
 /**
