@@ -39,6 +39,7 @@ const { reconcileStages, setStageStatus } = await import("../server/stages.ts");
 const { adoptFindings, runQa } = await import("../server/qa.ts");
 const { ledgerPath } = await import("../server/ledger.ts");
 const { lanesBlocked, stopLanes } = await import("../server/queue.ts");
+const { forgetRevivals } = await import("../server/agent.ts");
 const { findingsPath, inFindingsLane, verificationPath } =
   await import("../server/findings.ts");
 const { runVerification } = await import("../server/verification.ts");
@@ -369,7 +370,12 @@ await setStageStatus(KEY, "qa", "pending");
 // ---- AF18. The two ways an agent can stop answering. ------------------------
 // Gone for good. Waiting forever for an agent that will never be free is the
 // one case where the press has to fail rather than wait.
+//
+// `closed` alone is no longer that case: it is the resting state of a Paseo
+// agent and the gate restarts one. What makes this agent gone is that the
+// restart is refused, which the fixture says out loud. AC-AR10.
 await seed();
+await writeFile(join(FIX, "reload-fails-a1"), "");
 agent("a1", { activeTurn: true, status: "closed" });
 sent = [];
 await runQa(KEY, paseo);
@@ -392,8 +398,10 @@ const lost = (await loadState()).intake[0];
 check(
   "AF18 and the record is orphaned, which is what offers Retry",
   [lost.state, lost.lastError],
-  ["orphaned", "the agent is gone, archived or closed"],
+  ["orphaned", "the agent is gone: archived, or it would not restart"],
 );
+await rm(join(FIX, "reload-fails-a1"), { force: true });
+forgetRevivals();
 
 // A task agent is not the record's session. `handleFor` replaces a gone one
 // without ceremony, so the gate must not fail the press and must not orphan a
@@ -441,6 +449,7 @@ __setSettingsForTest(
 );
 agent("a1", { activeTurn: false, status: "idle" });
 agent("qa-1", { activeTurn: false, status: "closed" });
+await writeFile(join(FIX, "reload-fails-qa-1"), "");
 sent = [];
 made = [];
 await findings(2);
@@ -467,6 +476,8 @@ check(
   [made[0]?.id],
 );
 check("AF18 which the record now holds", kept.taskAgents?.qa, made[0]?.id);
+await rm(join(FIX, "reload-fails-qa-1"), { force: true });
+forgetRevivals();
 __setSettingsForTest(
   radarSettings.schema.parse({
     dryRun: false,

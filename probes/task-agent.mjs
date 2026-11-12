@@ -27,8 +27,12 @@ const stored = async () => (await loadState()).intake[0];
 /**
  * A daemon that answers for the agents it is told exist. `created` records every
  * agent this run made, which is the count the whole design turns on.
+ *
+ * `live` and `archived` are separate on purpose. An agent the daemon will not
+ * answer for is unreadable, which is no evidence of anything; an archived one
+ * refreshes perfectly well and says it is finished. Only the second is gone.
  */
-const fake = (live = new Set(["intake-1"])) => {
+const fake = (live = new Set(["intake-1"]), archived = new Set()) => {
   const created = [];
   const sent = [];
   let next = 0;
@@ -36,10 +40,11 @@ const fake = (live = new Set(["intake-1"])) => {
     created,
     sent,
     live,
+    archived,
     agents: {
       ref: (id) => ({
         refresh: async () => (live.has(id) ? {} : null),
-        archivedAt: null,
+        archivedAt: archived.has(id) ? "2026-11-01T00:00:00Z" : null,
         status: "idle",
         activeTurn: null,
         run: async (prompt) => {
@@ -106,7 +111,7 @@ check("T4 and went to intake's agent", paseo.sent.at(-1).id, "intake-1");
 
 // T5. A task agent archived by hand is replaced in place. It holds nothing but
 // the turn it was running, so losing it is not the record losing its session.
-paseo.live.delete("made-1");
+paseo.archived.add("made-1");
 await askAgent(paseo, await stored(), "qa", "run qa once more");
 check("T5 a replacement was made", paseo.created.length, 2);
 check("T5 the record points at the new one", (await stored()).taskAgents, { qa: "made-2" });
@@ -115,12 +120,32 @@ check("T5 and the record is untouched", (await stored()).state, "created");
 // T6. Intake's agent is the opposite case. Losing it is losing the session, so
 // the record is orphaned and only Retry may make another. AC-E2.
 settings({});
-paseo = fake(new Set());
+paseo = fake(new Set(["intake-1"]), new Set(["intake-1"]));
 record = await seed();
 const refused = await askAgent(paseo, record, "qa", "run qa").then(() => null, (error) => String(error.message));
 check("T6 the turn was refused", refused, "the agent is gone. Retry the record to make a new one");
 check("T6 nothing was created to cover for it", paseo.created.length, 0);
 check("T6 and the record is orphaned", (await stored()).state, "orphaned");
+
+// T6b. An agent the daemon would not answer for is not a gone agent. Orphaning
+// on a read that failed costs the record its session over a hiccup, and the
+// press is undone by pressing again. R6, R9. AC-AR11.
+settings({});
+paseo = fake(new Set());
+record = await seed();
+const unread = await askAgent(paseo, record, "qa", "run qa").then(() => null, (error) => String(error.message));
+check("T6b the turn was refused", unread, "the agent could not be read just now. Press again");
+check("T6b nothing was created to cover for it", paseo.created.length, 0);
+check("T6b and the record keeps its session", (await stored()).state, "created");
+
+// T6c. The same for a task agent: an unreadable one is not replaced, because a
+// second agent in the workspace is not undone by pressing again.
+settings({ qa: { agent: OTHER } });
+paseo = fake(new Set(["intake-1"]));
+record = await seed({ taskAgents: { qa: "qa-1" } });
+const held = await askAgent(paseo, record, "qa", "run qa").then(() => null, (error) => String(error.message));
+check("T6c the turn was refused", held, "the agent could not be read just now. Press again");
+check("T6c and no second task agent was made", paseo.created.length, 0);
 
 // T7. A record with no workspace cannot have an agent made in the right place,
 // so it falls back to intake's rather than making one somewhere else.

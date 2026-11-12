@@ -84,3 +84,71 @@ export async function inspectAgent(
   log(`unrecognised status ${String(snapshot.Status)} for ${agentId}`);
   return null;
 }
+
+/**
+ * How long a refused revival is believed for.
+ *
+ * A queued stage asks whether its agent can take a turn every few seconds, and
+ * for a closed agent that question now runs `paseo agent reload`. Without a
+ * cooldown, one agent the daemon cannot restart would mean one subprocess per
+ * poll for as long as the lane waits.
+ */
+const REVIVE_COOLDOWN_MS = 5 * 60_000;
+
+/** Revivals already in flight, so two presses on one record make one attempt. */
+const reviving = new Map<string, Promise<boolean>>();
+
+/** When a revival last failed, per agent. A success leaves no entry behind. */
+const refused = new Map<string, number>();
+
+/** A reload restarts a provider process, which is slower than an inspect. */
+const RELOAD_TIMEOUT_MS = 120_000;
+
+async function reload(agentId: string): Promise<boolean> {
+  try {
+    await execCommand(await paseoBin(), ["agent", "reload", agentId], {
+      timeout: RELOAD_TIMEOUT_MS,
+    });
+  } catch (error) {
+    refused.set(agentId, Date.now());
+    log(`cannot reload ${agentId}: ${String(error)}`);
+    return false;
+  }
+  refused.delete(agentId);
+  log(`reloaded ${agentId}`);
+  return true;
+}
+
+/**
+ * Restarts the process behind a closed agent, answering whether it came back.
+ *
+ * `closed` is the resting state of a Paseo agent, not its death. The daemon
+ * ends the provider process when an agent goes quiet and keeps the session, so
+ * most agents on a machine read `closed` while every one of them still holds
+ * its whole timeline, and `paseo agent reload` returns one to `idle` with that
+ * timeline intact.
+ *
+ * There is no SDK call for this. `PaseoAgentHandle` carries no reload and the
+ * daemon client exposes only `reloadDaemonConfig` and `reloadPlugin`, so the
+ * CLI is the only surface, reached the same way `inspectAgent` reaches it.
+ */
+export async function reviveAgent(agentId: string): Promise<boolean> {
+  const failed = refused.get(agentId);
+  if (failed != null && Date.now() - failed < REVIVE_COOLDOWN_MS) {
+    log(`not reloading ${agentId} again yet: the last attempt failed`);
+    return false;
+  }
+
+  const running = reviving.get(agentId);
+  if (running) return running;
+
+  const attempt = reload(agentId).finally(() => reviving.delete(agentId));
+  reviving.set(agentId, attempt);
+  return attempt;
+}
+
+/** Drops the cooldown and the in-flight map. Probes only. */
+export function forgetRevivals(): void {
+  reviving.clear();
+  refused.clear();
+}
