@@ -1,4 +1,4 @@
-import { execCommand } from "@getpaseo/plugin/server";
+import { run } from "./exec";
 import type { IntakeRecord } from "../shared/inbox";
 import { inspectAgent } from "./agent";
 import { keyUrl, note as ledger } from "./ledger";
@@ -14,7 +14,7 @@ export type PullRequestState = "OPEN" | "MERGED" | "CLOSED";
 export async function pullRequestState(
   record: IntakeRecord,
 ): Promise<PullRequestState | undefined> {
-  const { stdout } = await execCommand(
+  const { stdout } = await run(
     await ghBin(),
     [
       "pr",
@@ -67,7 +67,7 @@ function aged(timestamp: string, source: string): Verdict {
 }
 
 async function archiveWorkspace(workspaceId: string): Promise<void> {
-  await execCommand(await paseoBin(), ["workspace", "archive", workspaceId], {
+  await run(await paseoBin(), ["workspace", "archive", workspaceId], {
     timeout: 60_000,
   });
 }
@@ -107,7 +107,10 @@ export async function reap(dryRun: boolean): Promise<void> {
         const current = fresh.intake.find(
           (candidate) => candidate.key === record.key,
         );
-        if (current) current.state = "archived";
+        if (current) {
+          current.state = "archived";
+          current.archivedAt = new Date().toISOString();
+        }
       });
       log(`reap: archived ${workspaceId} for ${record.key} (${prState})`);
       ledger({

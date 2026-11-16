@@ -49,6 +49,9 @@ import { SummaryCard } from "./summary";
 /** Big enough for its glyph to read at arm's length, small enough for five in a column. */
 const NODE_SIZE = 22;
 
+/** Roughly the 240 characters `causeOf` keeps, at this column width. */
+const FAULT_LINES = 6;
+
 type Navigation = PluginScreenProps["navigation"];
 type Layout = PluginScreenProps["layout"];
 
@@ -678,7 +681,12 @@ export function Detail({
         </View>
         <Prose style={styles.footerLine}>{record.key}</Prose>
         {record.lastError ? (
-          <Prose style={styles.footerError}>{record.lastError}</Prose>
+          // Clamped: a fault stored before `causeOf` existed is the whole
+          // argv with the brief prompt in it, and unclamped it pushes the
+          // record off the screen in 12px red. AC-AS3.
+          <Prose numberOfLines={FAULT_LINES} style={styles.footerError}>
+            {record.lastError}
+          </Prose>
         ) : null}
       </View>
     </View>

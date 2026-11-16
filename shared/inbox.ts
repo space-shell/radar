@@ -117,6 +117,24 @@ export const intakeRecordSchema = z.object({
    * `pr`. AC-AR2.
    */
   reopenedAt: z.string().optional(),
+  /**
+   * When the record was settled as archived.
+   *
+   * Written so that the wake branch can tell a stored `pr.state` that is older
+   * than the archive from one that is newer. `pr` is refreshed on the search
+   * clock and the archive decision asks GitHub live, so for a pull request that
+   * merges between two sweeps the two disagree for one window, and the wake
+   * read the stale half: `#9983` came back as an orphan 223ms after the same
+   * tick archived it, carrying `the pull request was reopened` about a pull
+   * request that had merged four hours earlier. AC-AS5.
+   */
+  archivedAt: z.string().optional(),
+  /**
+   * How many times a failed launch has been tried again on its own, and when it
+   * was last tried. Absent until the first automatic attempt. AC-AS2.
+   */
+  launchAttempts: z.number().optional(),
+  lastAttemptAt: z.string().optional(),
 });
 
 /** Epoch milliseconds for the latest of some timestamps, 0 when none parses. */
@@ -267,6 +285,23 @@ function lastRound(record: IntakeRecord): SubmittedReview | undefined {
  * Settled rows are excluded. Merged and closed settle the row whatever happened
  * to it, and there is nothing left to re-review. AC-AQ1.
  */
+/** As much of a fault as a glyph's spoken label can usefully carry. */
+const SPOKEN_FAULT = 120;
+
+/**
+ * A stored fault, short enough to be read out.
+ *
+ * Launch faults recorded before `causeOf` existed are the whole command line,
+ * brief prompt included, and a screen reader given 1250 characters of argv says
+ * nothing a listener can use. The detail view still shows the stored text.
+ */
+export function faultSummary(fault: string): string {
+  const flat = fault.replace(/\s+/g, " ").trim();
+  return flat.length <= SPOKEN_FAULT
+    ? flat
+    : `${flat.slice(0, SPOKEN_FAULT - 1)}\u2026`;
+}
+
 export function rereviewDue(record: IntakeRecord): boolean {
   if (record.dismissedAt || record.state === "archived") return false;
   if (record.pr && record.pr.state !== "open") return false;

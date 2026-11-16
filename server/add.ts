@@ -1,4 +1,4 @@
-import { execCommand } from "@getpaseo/plugin/server";
+import { run } from "./exec";
 import { ghBin } from "./binaries";
 import type { ReviewRequest } from "./github";
 import { intake, intakeEnvironment } from "./intake";
@@ -56,7 +56,7 @@ function firstLine(error: unknown): string {
  * because a mistyped number is the likeliest thing to be wrong with a paste.
  */
 async function lookUp(repo: string, number: number): Promise<ReviewRequest> {
-  const { stdout } = await execCommand(
+  const { stdout } = await run(
     await ghBin(),
     [
       "pr",

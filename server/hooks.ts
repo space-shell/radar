@@ -43,10 +43,14 @@ const settle = coalesce(async () => {
   await collectSummaries();
 });
 
-/** What a vanished agent can have changed: a record that claimed it. */
-const liveness = coalesce(async () => {
-  await reconcileAgents();
-});
+/**
+ * What a vanished agent can have changed: a record that claimed it.
+ *
+ * No wrapper of its own: `reconcileAgents` carries the coalescing gate, so the
+ * hook and the tick share one, which is the only arrangement that stops the two
+ * of them writing over each other.
+ */
+const liveness = () => reconcileAgents();
 
 /** The floor, called by the tick. Does nothing when a hook has been doing the work. */
 export async function settleDue(): Promise<void> {

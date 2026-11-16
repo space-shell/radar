@@ -1367,6 +1367,76 @@ screen cannot reach it.
       left lets the process exit mid-wait and the press never settles at all, which
       is a hang rather than a failure. Verified by probe.
 
+## AS. A tick that cannot be stopped by one of its stages
+
+Five faults, one morning, all of them visible on `acme/web#9990`. The launch
+for it declared a 120 second timeout and ran for 956 seconds; because a tick is
+serial, every tick behind it stalled too, and the plugin said nothing between
+06:59:57 and 07:25:39. When it finally failed, the record was left at `failed`
+for good, carrying 1250 characters of argv as its one red line, with the actual
+reason at character 1062. An aborted notification poll on the same morning cost
+eleven sweeps, eleven reaps and eleven Linear polls rather than eleven polls. And
+a status read 223ms stale brought `#9983` back from `archived` with "the pull
+request was reopened" as the stated reason, which was not true.
+
+- [x] **AC-AS1** A command cannot outlive the timeout it declares. `execCommand`
+      sends `killSignal` once and never escalates, and the default is SIGTERM, so
+      a child that traps it runs to its own end: measured here, a child trapping
+      TERM against a declared 300ms resolved _successfully_ after 2 seconds, and
+      a grandchild holding the inherited stdout pipe did the same. Every call
+      goes through `run`, which sets `killSignal: "SIGKILL"`, which cannot be
+      trapped, and races the call against a timer in this process for the kill
+      that does not land at all. What this cannot do through this SDK is reap the
+      tree: the signal goes to the command, not to its process group, and
+      `execCommand` exposes no `detached`, so a grandchild survives its parent.
+      That is a leaked process, not a stalled tick. Verified by probe, including
+      the defect: the same child through `execCommand` directly still returns
+      late, which is what the probe asserts first.
+- [x] **AC-AS2** A launch that failed is tried again, twice, a quarter of an hour
+      apart, and then waits for a press. `intake` writes the key into
+      `seenPullRequests` whether or not the launch worked, so a failed launch was
+      terminal and the cause is usually transient: `#9990` failed on a fetch
+      that the plugin then re-ran by hand in 0.844s. Not done by withholding
+      the key from `seenPullRequests`, because `intake`'s write re-checks for an
+      existing record under the lock and returns false, so a second successful
+      launch would be discarded and its agent orphaned. `retryRecord` is the path
+      that updates the record in place, and it adopts an agent an earlier attempt
+      left behind rather than building a second worktree. One record per sweep,
+      counted before the attempt rather than after, so a launch that takes the
+      tick down with it still spends its attempt. Verified by probe.
+- [x] **AC-AS3** What the screen is given is the cause, not the command. `String(error)`
+      on a failed launch is the whole argv with the brief prompt inside it, and
+      the row has one line for it. `causeOf` reads the last JSON `"message"` in
+      stderr, or its last line of prose, falling back to the error's own message
+      when the output says nothing, and clamps to 240 characters. The full text
+      still reaches the daemon log, which is where a whole argv belongs.
+      `faultSummary` cuts it to 120 for the glyph's spoken label, which has no
+      lines to wrap into. Verified by probe.
+- [x] **AC-AS4** One stage of a tick cannot take the rest of the tick down with
+      it. `pollNotifications` was the only unguarded await in `tick`, and every
+      stage after it, the sweep, the reap and the Linear poll, was skipped
+      whenever it aborted. Each stage is independent, so each is wrapped: the
+      failure is named in the log and dropped, and a stage that needs retrying
+      says so through state it owns. The notification cursor is carried through
+      unchanged rather than cleared, because writing null makes the next poll
+      unconditional and throws away the `304` that makes it cheap. Verified by
+      probe.
+- [x] **AC-AS5** A status read before an archive cannot undo it. `record.pr` holds
+      whatever the last status sweep read, and the reap that archives a merged
+      pull request runs after that sweep, so for the rest of the tick the record
+      carries an archive stamped later than the open status beside it: that is
+      what resurrected `#9983` 223ms after the same plugin archived it. Both
+      writers stamp `archivedAt` now, and the wake is allowed only when the
+      status was checked after the archive. An archive with no stamp, which is
+      every legacy one, is judged as before rather than frozen. Waking clears the
+      stamp, so a later archive is never judged against an old one.
+      `reconcileAgents` also carries the coalescing gate itself, so the tick and
+      the `agent.turn_ended` hook share one rather than writing over each other.
+      Verified by probe.
+- [ ] **AC-AS6** A fault on the detail screen is at most six lines, and selectable
+      for the rest. The footer rendered `lastError` unclamped, so a launch
+      failure pushed the whole screen down by a page of argv. Awaiting the app.
+
 ## Awaiting the app
 
 Every criterion below is built and typechecked. None can be ticked from here: each asserts
@@ -1430,6 +1500,7 @@ invocation command, so there is no route to them except the running app.
 | AC-AQ13                        | One open of the replies screen on a record with a round out, then one Resolve                                   |
 | AC-AQ14                        | One Review again press on a record whose head has moved, read on the node and in the findings file              |
 | AC-AQ15                        | The wizard on that second round, read for the marks and the switches                                            |
+| AC-AS6                         | One look at a record carrying a launch failure, on the row and then on the detail                               |
 
 ## Non-goals
 

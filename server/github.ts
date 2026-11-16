@@ -1,4 +1,4 @@
-import { execCommand } from "@getpaseo/plugin/server";
+import { run } from "./exec";
 import { ghBin } from "./binaries";
 
 const NOTIFICATIONS_URL =
@@ -60,7 +60,7 @@ export async function githubToken(): Promise<string> {
     cachedToken = supplied.trim();
     return cachedToken;
   }
-  const { stdout } = await execCommand(await ghBin(), ["auth", "token"], {
+  const { stdout } = await run(await ghBin(), ["auth", "token"], {
     timeout: 15_000,
   });
   cachedToken = stdout.trim();
@@ -130,7 +130,7 @@ export async function pollNotifications(
 }
 
 export async function searchReviewRequests(): Promise<ReviewRequest[]> {
-  const { stdout } = await execCommand(
+  const { stdout } = await run(
     await ghBin(),
     [
       "search",
@@ -161,7 +161,7 @@ export async function pullRequestBody(
   repo: string,
   number: number,
 ): Promise<string> {
-  const { stdout } = await execCommand(
+  const { stdout } = await run(
     await ghBin(),
     [
       "pr",

@@ -1,6 +1,6 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { execCommand } from "@getpaseo/plugin/server";
+import { run } from "./exec";
 import { gitBin } from "./binaries";
 import { loadConfig } from "./settings";
 
@@ -36,7 +36,7 @@ export async function discoverCheckouts(): Promise<Map<string, string>> {
       if (!entry.isDirectory()) continue;
       const path = join(root, entry.name);
       try {
-        const { stdout } = await execCommand(
+        const { stdout } = await run(
           git,
           ["-C", path, "remote", "get-url", "origin"],
           { timeout: 10_000 },

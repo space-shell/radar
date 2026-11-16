@@ -5,7 +5,12 @@ import { ExternalLink } from "@getpaseo/plugin/client/ui";
 import { useMachine } from "./vendor/xstate-react.mjs";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { pullRequestUrl, unseen, type IntakeRecord } from "../shared/inbox";
+import {
+  faultSummary,
+  pullRequestUrl,
+  unseen,
+  type IntakeRecord,
+} from "../shared/inbox";
 import { viewMachine } from "../shared/machines/view";
 import { AddPullRequest } from "./add";
 import { ConfirmButton } from "./confirm";
@@ -324,7 +329,7 @@ export function Inbox({
                 // The reason itself lives on the detail view. A row carrying a
                 // sentence of failure prose crowds out the title it belongs to.
                 <Text
-                  accessibilityLabel={`Fault: ${record.lastError}`}
+                  accessibilityLabel={`Fault: ${faultSummary(record.lastError)}`}
                   style={styles.titleFault}
                 >
                   {" \u24D8"}

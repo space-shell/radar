@@ -5,6 +5,7 @@ import {
   type LaunchTarget,
 } from "./intake";
 import { forgetLostTurns, reviewOf } from "../shared/review";
+import { causeOf } from "./exec";
 import { withdrawAcknowledgement } from "./acknowledge";
 import { discoverCheckouts } from "./repos";
 import { keyUrl, note as ledger } from "./ledger";
@@ -85,6 +86,15 @@ export interface RetryResult {
 }
 
 /**
+ * Forgets the automatic relaunch budget. A record that is running again has no
+ * spent attempts to carry into whatever fails next. AC-AS2.
+ */
+function clearRelaunch(record: IntakeRecord): void {
+  delete record.launchAttempts;
+  delete record.lastAttemptAt;
+}
+
+/**
  * Relaunches a record that never produced an agent. Deliberately ignores
  * seenPullRequests: that list suppresses fresh intake, never an explicit retry. AC-A6.
  */
@@ -113,6 +123,7 @@ export async function retryRecord(key: string): Promise<RetryResult> {
         fresh.agentId = existing.agentId;
         fresh.workspaceId = existing.workspaceId;
         delete fresh.lastError;
+        clearRelaunch(fresh);
         clearLostTurns(fresh);
       });
       log(`retry adopted existing agent ${existing.agentId} for ${key}`);
@@ -160,6 +171,7 @@ export async function retryRecord(key: string): Promise<RetryResult> {
       // worktree that no longer holds this pull request.
       delete fresh.taskAgents;
       delete fresh.lastError;
+      clearRelaunch(fresh);
       clearLostTurns(fresh);
     });
     log(`retry launched ${key} as agent ${agentId}`);
@@ -171,12 +183,13 @@ export async function retryRecord(key: string): Promise<RetryResult> {
     });
     return { ok: true, adopted: false };
   } catch (caught) {
-    const error = String(caught);
+    // Both the stored line and the toast, so neither is a page of argv. AC-AS3.
+    const error = causeOf(caught);
     await mutateRecord(key, (fresh) => {
       fresh.state = "failed";
       fresh.lastError = error;
     });
-    log(`retry failed for ${key}: ${error}`);
+    log(`retry failed for ${key}: ${String(caught)}`);
     return { ok: false, adopted: false, error };
   } finally {
     inFlight.delete(key);
@@ -238,4 +251,71 @@ export async function dismissRecord(
     });
   }
   return warning ? { ok, warning } : { ok };
+}
+
+/**
+ * How long a failed launch is left alone before it is tried again, and how many
+ * times. Two attempts, a quarter of an hour apart, then it waits for a press.
+ */
+const RELAUNCH_AFTER_MS = 15 * 60_000;
+const RELAUNCH_LIMIT = 2;
+
+/** When the last launch for this record was attempted, however it was started. */
+function lastAttempt(record: IntakeRecord): number {
+  const when = Date.parse(record.lastAttemptAt ?? record.firstSeen);
+  return Number.isFinite(when) ? when : 0;
+}
+
+/**
+ * One failed launch, tried again.
+ *
+ * A failed launch is terminal today, and that is the defect: `intake` writes the
+ * key into `seenPullRequests` whether or not the launch worked, so the sweep
+ * that would take it in again filters it out for good, and the row sits at
+ * `failed` until James presses Retry. The cause is usually transient: `#9990`
+ * failed on a `git fetch` that the plugin then re-ran by hand in 0.844s.
+ *
+ * Deliberately not done by withholding the key from `seenPullRequests`:
+ * `intake`'s write re-checks for an existing record under the lock and returns
+ * false, so a second successful launch would be discarded and its agent
+ * orphaned. `retryRecord` is the path that updates the record in place, and it
+ * adopts an agent an earlier attempt left behind rather than building a second
+ * worktree. AC-AS2.
+ *
+ * One record per sweep, and only after the wait, so a tick cannot spend three
+ * launch timeouts in a row. Attempts are counted on the record, so a launch
+ * that fails for a structural reason stops asking rather than retrying forever;
+ * Retry stays the escape hatch and clears the count on success.
+ */
+export async function relaunchFailed(): Promise<void> {
+  const snapshot = await loadState();
+  const now = Date.now();
+  const due = snapshot.intake.find(
+    (record) =>
+      record.state === "failed" &&
+      !record.dismissedAt &&
+      // An unread status reads as open: the first sweep after intake is what
+      // writes `pr`, and a launch that failed before it has one is the case
+      // this exists for.
+      (record.pr?.state ?? "open") === "open" &&
+      (record.launchAttempts ?? 0) < RELAUNCH_LIMIT &&
+      now - lastAttempt(record) >= RELAUNCH_AFTER_MS,
+  );
+  if (!due) return;
+
+  const attempt = (due.launchAttempts ?? 0) + 1;
+  // Counted before the attempt, not after: a launch that takes the tick down
+  // with it must still have spent its attempt, or the next tick spends it again.
+  const claimed = await updateState((state) => {
+    const record = state.intake.find((candidate) => candidate.key === due.key);
+    if (!record || record.state !== "failed") return false;
+    record.launchAttempts = attempt;
+    record.lastAttemptAt = new Date().toISOString();
+    return true;
+  });
+  if (!claimed) return;
+
+  log(`${due.key}: relaunching, attempt ${attempt} of ${RELAUNCH_LIMIT}`);
+  const result = await retryRecord(due.key);
+  if (!result.ok) log(`${due.key}: relaunch failed: ${result.error}`);
 }

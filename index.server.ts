@@ -3,6 +3,7 @@ import {
   pollNotifications,
   pullRequestBody,
   searchReviewRequests,
+  type NotificationHint,
 } from "./server/github";
 import { linearRef } from "./server/linear-ref";
 import { sweepLinear } from "./server/radar";
@@ -38,7 +39,7 @@ import {
   undoStageAction,
 } from "./shared/inbox";
 import { addByLink } from "./server/add";
-import { dismissRecord, retryRecord } from "./server/actions";
+import { dismissRecord, relaunchFailed, retryRecord } from "./server/actions";
 import {
   forgetUnreadableRecord,
   markRecordSeen,
@@ -72,6 +73,7 @@ import {
   submitReview,
 } from "./server/feedback";
 import { log } from "./server/log";
+import { stage } from "./server/tick";
 
 const MIN_POLL_SECONDS = 60;
 /** Each lookup is a 30s `gh pr view` and the tick is serial, so the sweep is capped. R11. */
@@ -178,6 +180,9 @@ async function reconcile(dryRun: boolean): Promise<void> {
   }
 
   await backfill();
+  // After the arrivals and before the statuses: a relaunch that works writes
+  // `created`, and the status pass on this same sweep then reads it. AC-AS2.
+  await relaunchFailed();
   await backfillLinear();
   // Before the statuses, so a stage settled from a file is what the screen reads
   // on this tick rather than the one after it.
@@ -264,21 +269,43 @@ async function linearDue(seconds: number): Promise<void> {
   });
 }
 
+/**
+ * The notification poll, or a tick's worth of silence from it.
+ *
+ * The cursor is carried through unchanged rather than cleared: writing null
+ * would make the next poll unconditional and throw away the `304` that makes
+ * this cheap. `reviewRequested` is false, which costs at most one sweep of
+ * latency, and the sweep still runs on its own clock below.
+ */
+async function poll(cursor: string | null): Promise<NotificationHint> {
+  try {
+    return await pollNotifications(cursor);
+  } catch (error) {
+    log(`notifications not read: ${String(error)}`);
+    return {
+      changed: false,
+      lastModified: cursor,
+      pollSeconds: null,
+      reviewRequested: false,
+    };
+  }
+}
+
 async function tick(): Promise<number> {
   const config = await loadConfig();
 
   // Every tick, because it is one `paseo ls` and because the screen reads which
   // agents are mid turn out of what it refreshes. A slow clock here would be a
   // summary indicator a slow clock behind. The hooks only sharpen it. AC-AE4.
-  await reconcileAgents();
+  await stage("the agent pass", reconcileAgents);
 
   // Stages and summaries are the hooks' work now: a turn ending is exactly when
   // either can have changed, and the daemon says so for free. This is the floor
   // under them, for the events a stopped daemon never heard. AC-AE5.
-  await settleDue();
+  await stage("the settle pass", settleDue);
 
   const before = await loadState();
-  const hint = await pollNotifications(before.githubLastModified);
+  const hint = await poll(before.githubLastModified);
   await updateState((state) => {
     state.githubLastModified = hint.lastModified;
   });
@@ -290,14 +317,14 @@ async function tick(): Promise<number> {
   const due = sinceSearch >= config.searchIntervalSeconds;
 
   if (hint.reviewRequested || due) {
-    await sweep();
+    await stage("the search", sweep);
   }
 
   if (due) {
-    await reap(config.dryRun);
+    await stage("the reap", () => reap(config.dryRun));
   }
 
-  await linearDue(config.linearPollSeconds);
+  await stage("the Linear poll", () => linearDue(config.linearPollSeconds));
 
   return Math.max(
     hint.pollSeconds ?? config.notificationPollSeconds,

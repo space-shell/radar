@@ -1,4 +1,4 @@
-import { execCommand } from "@getpaseo/plugin/server";
+import { run } from "./exec";
 import { z } from "zod";
 import type { LinearOpenIssue } from "../shared/linear";
 import { loadConfig } from "./settings";
@@ -41,7 +41,7 @@ export async function linearKey(): Promise<string | null> {
   const [command, ...args] = (await loadConfig()).linearKeyCommand;
   if (!command) return null;
 
-  const { stdout } = await execCommand(command, args, { timeout: 15_000 });
+  const { stdout } = await run(command, args, { timeout: 15_000 });
   const key = stdout.trim();
   if (!key) throw new Error("the Linear key command returned nothing");
 

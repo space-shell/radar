@@ -27,14 +27,14 @@ pr(202, "OPEN");
 pr(205, "MERGED");
 pr(206, "MERGED");
 
-const status = (state) => ({
+const status = (state, checkedAt = new Date().toISOString()) => ({
   state,
   isDraft: false,
   decision: state === "merged" ? "approved" : null,
   approvedBy: [],
   blockedBy: [],
   mine: null,
-  checkedAt: new Date().toISOString(),
+  checkedAt,
 });
 
 const record = (n, extra = {}) => ({
@@ -74,6 +74,26 @@ const intake = [
   record(212, { state: "archived", pr: status("open") }),
   // Archived with no stored status at all. No evidence either way, so it stays.
   record(213, { state: "archived" }),
+  // The race the reap lost. `pr.state` is whatever the last status sweep read,
+  // and the reap that archives a merged pull request runs after it, so for the
+  // rest of that tick the record holds an archive stamped later than the open
+  // status beside it. Waking on that resurrected #9983 223ms after it was
+  // archived, with "the pull request was reopened" as the stated reason, which
+  // was not true. AC-AS5.
+  record(215, {
+    state: "archived",
+    archivedAt: new Date().toISOString(),
+    pr: status("open", new Date(Date.now() - 60_000).toISOString()),
+  }),
+  // A real reopen: the status was read after the archive, so it is evidence.
+  record(216, {
+    state: "archived",
+    archivedAt: new Date(Date.now() - 3_600_000).toISOString(),
+    pr: status("open"),
+  }),
+  // An archive from before the stamp existed. Nothing is known about the order,
+  // so the old behaviour stands rather than every legacy archive freezing.
+  record(217, { state: "archived", pr: status("open") }),
 ];
 
 const write = (records) =>
@@ -150,6 +170,13 @@ check(rowOf(212).lastError === "the pull request was reopened", "B20 and says wh
 check(typeof rowOf(212).reopenedAt === "string", "B21 stamped, so the row reads unread again", String(rowOf(212).reopenedAt));
 check(said("owner/web#212 was reopened, bringing it back as an orphan"), "B22 and the log says so");
 check(rowOf(213).state === "archived" && !said("#213"), "B23 an archive with no stored status is not evidence of anything");
+check(typeof rowOf(200).archivedAt === "string", "B25 settling an agent stamps the archive, which is what dates the race", String(rowOf(200).archivedAt));
+check(rowOf(212).archivedAt === undefined, "B26 and waking clears the stamp, so a later archive is not judged against an old one");
+
+// The race, both ways round.
+check(rowOf(215).state === "archived" && !said("#215"), "B27 an open status older than the archive is stale, not a reopen", rowOf(215).state);
+check(rowOf(216).state === "orphaned", "B28 an open status read after the archive is a reopen", rowOf(216).state);
+check(rowOf(217).state === "orphaned", "B29 an archive with no stamp is judged as before", rowOf(217).state);
 
 const { activityAt } = await import("../shared/inbox.ts");
 const quiet = record(214, { state: "archived" });

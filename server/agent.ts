@@ -1,4 +1,4 @@
-import { execCommand } from "@getpaseo/plugin/server";
+import { run } from "./exec";
 import { log } from "./log";
 import { paseoBin } from "./binaries";
 
@@ -49,13 +49,9 @@ export async function inspectAgent(
 ): Promise<AgentFacts | null> {
   let stdout: string;
   try {
-    ({ stdout } = await execCommand(
-      await paseoBin(),
-      ["inspect", agentId, "--json"],
-      {
-        timeout: 30_000,
-      },
-    ));
+    ({ stdout } = await run(await paseoBin(), ["inspect", agentId, "--json"], {
+      timeout: 30_000,
+    }));
   } catch (error) {
     // A deleted agent is gone for good. A timeout or a daemon hiccup is not.
     if (notFound(error)) return { liveness: "stopped", updatedAt: null };
@@ -106,7 +102,7 @@ const RELOAD_TIMEOUT_MS = 120_000;
 
 async function reload(agentId: string): Promise<boolean> {
   try {
-    await execCommand(await paseoBin(), ["agent", "reload", agentId], {
+    await run(await paseoBin(), ["agent", "reload", agentId], {
       timeout: RELOAD_TIMEOUT_MS,
     });
   } catch (error) {

@@ -3,6 +3,7 @@ import { agentStatuses } from "./intake";
 import { keyUrl, note } from "./ledger";
 import { log } from "./log";
 import { pullRequestState } from "./reap";
+import { coalesce } from "./single-flight";
 import { loadState, updateState } from "./state";
 
 /**
@@ -73,6 +74,30 @@ export function agentSettled(agentId: string): void {
 }
 
 /**
+ * Whether the stored status was read after the record was archived.
+ *
+ * The archive decision asks GitHub live; `record.pr` is as old as the last
+ * search tick. For a pull request that merges between two sweeps the two
+ * disagree for exactly one window, and without this the wake branch believed
+ * the stale half: `#9983` was archived as merged at 06:42:23.060 and brought
+ * back as an orphan at 06:42:23.283 by a second pass reading the same stale
+ * `pr.state: open`, with `the pull request was reopened` written about a pull
+ * request that had merged four hours earlier.
+ *
+ * A record archived before this stamp existed has no `archivedAt`, so its
+ * archive is older than anything now on disk and the stored status is taken at
+ * face value, which is today's behaviour and what keeps AC-AR2 true for the 87
+ * rows already settled. AC-AS5.
+ */
+function statusOutlivesArchive(record: IntakeRecord): boolean {
+  if (!record.archivedAt) return true;
+  const archived = Date.parse(record.archivedAt);
+  if (!Number.isFinite(archived)) return true;
+  const checked = Date.parse(record.pr?.checkedAt ?? "");
+  return Number.isFinite(checked) && checked > archived;
+}
+
+/**
  * A green row must mean a live agent. An agent archived or deleted by hand leaves
  * the record claiming a session that no longer opens, so it moves to `orphaned`
  * and becomes retryable. R3.
@@ -82,7 +107,7 @@ export function agentSettled(agentId: string): void {
  * reason rather than a broken one. That row reads `archived`, carries no fault,
  * and stays visible until James dismisses it. AC-V1.
  */
-export async function reconcileAgents(): Promise<void> {
+async function agentPass(): Promise<void> {
   const snapshot = await loadState();
   const watched = snapshot.intake.filter(
     (record) => record.state === "created" && record.agentId,
@@ -141,7 +166,10 @@ export async function reconcileAgents(): Promise<void> {
    * `late`, and for the same reason: the search tick refreshes it anyway. AC-AR2.
    */
   const woken = snapshot.intake.filter(
-    (record) => record.state === "archived" && record.pr?.state === "open",
+    (record) =>
+      record.state === "archived" &&
+      record.pr?.state === "open" &&
+      statusOutlivesArchive(record),
   );
   const backFromArchive = new Set(woken.map((record) => record.key));
 
@@ -163,6 +191,7 @@ export async function reconcileAgents(): Promise<void> {
         record.state = "orphaned";
         record.lastError = "the pull request was reopened";
         record.reopenedAt = new Date().toISOString();
+        delete record.archivedAt;
         wokenLines.push(record.key);
         log(`${record.key} was reopened, bringing it back as an orphan`);
         continue;
@@ -181,6 +210,7 @@ export async function reconcileAgents(): Promise<void> {
       const was = record.state;
       if (was !== "created" && was !== "orphaned") continue;
       record.state = "archived";
+      record.archivedAt = new Date().toISOString();
       delete record.lastError;
       ledgerLines.push({ key: record.key, ending });
       log(
@@ -208,4 +238,22 @@ export async function reconcileAgents(): Promise<void> {
       url: keyUrl(line.key),
     });
   }
+}
+
+/**
+ * The pass, run one at a time, and once more if anything asked while it ran.
+ *
+ * The gate is here rather than at each caller because there are three of them:
+ * the tick, and the `agent.archived` and `agent.closed` hooks. Each used to
+ * guard itself, which guards nothing: a hook pass and a tick pass 480ms apart
+ * both read the ledger before either wrote, and the second wrote its decision
+ * over the first's. That is how `#9983` was archived and then un-archived
+ * inside a quarter of a second. Coalesced rather than single-flighted because
+ * two of the three callers are events: an event says something changed now, and
+ * a pass half way through has already read the half that covers it. AC-AS5.
+ */
+const agentGate = coalesce(agentPass);
+
+export async function reconcileAgents(): Promise<void> {
+  await agentGate();
 }

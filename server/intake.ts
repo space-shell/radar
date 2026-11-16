@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { execCommand } from "@getpaseo/plugin/server";
+import { causeOf, run } from "./exec";
 import { reviveAgent } from "./agent";
 import { clearArtifact, prepareArtifact } from "./artifact";
 import { briefPath } from "./briefs";
@@ -113,7 +113,7 @@ const absolute = (path: string) =>
   path.startsWith("~/") ? join(homedir(), path.slice(2)) : path;
 
 async function lookupJson<T>(args: string[]): Promise<T[]> {
-  const { stdout } = await execCommand(await paseoBin(), args, {
+  const { stdout } = await run(await paseoBin(), args, {
     timeout: 30_000,
   });
   const parsed: unknown = JSON.parse(stdout);
@@ -188,7 +188,7 @@ export async function launchIntake(
   await prepareArtifact(output);
   await clearArtifact(output);
 
-  await execCommand(
+  await run(
     await paseoBin(),
     launchArgs(target, checkout, briefs, setup, agent),
     { timeout: 120_000 },
@@ -338,7 +338,10 @@ export async function intake(
       }
     } catch (error) {
       record.state = "failed";
-      record.lastError = String(error);
+      // The cause, not the command: `String(error)` on a failed launch is the
+      // whole argv, brief prompt included, and the screen has one red line for
+      // it. The log below keeps the full text. AC-AS3.
+      record.lastError = causeOf(error);
       log(`launch failed for ${request.key}: ${String(error)}`);
     }
   }
