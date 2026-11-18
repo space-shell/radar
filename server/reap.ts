@@ -1,10 +1,10 @@
 import { run } from "./exec";
 import type { IntakeRecord } from "../shared/inbox";
+import { archiveRecordWorkspace } from "./archive";
 import { inspectAgent } from "./agent";
-import { keyUrl, note as ledger } from "./ledger";
-import { loadState, updateState } from "./state";
+import { loadState } from "./state";
 import { log } from "./log";
-import { ghBin, paseoBin } from "./binaries";
+import { ghBin } from "./binaries";
 
 const GRACE_MS = 24 * 60 * 60 * 1000;
 
@@ -66,19 +66,46 @@ function aged(timestamp: string, source: string): Verdict {
     : { archive: false, because: "inside the grace window" };
 }
 
-async function archiveWorkspace(workspaceId: string): Promise<void> {
-  await run(await paseoBin(), ["workspace", "archive", workspaceId], {
-    timeout: 60_000,
-  });
-}
-
 export async function reap(dryRun: boolean): Promise<void> {
   // A snapshot to decide from. Each archive writes its own short transaction. R2.
   const snapshot = await loadState();
 
   for (const record of snapshot.intake) {
     const { workspaceId } = record;
-    if (record.state !== "created" || !workspaceId) continue;
+    /*
+     * Nothing to archive, or nothing left to archive. `state === "archived"`
+     * carries the second case for the 87 rows settled before the workspace
+     * stamp existed: their workspaces went with the archive that settled them,
+     * and without this they would each draw one refused `paseo workspace
+     * archive` a tick for ever. AC-AT2.
+     */
+    if (!workspaceId) continue;
+    if (record.workspaceArchivedAt || record.state === "archived") continue;
+
+    /*
+     * A dismissal archives the workspace at the press, so this is only the
+     * backstop for one that did not land: the daemon was busy, or the plugin
+     * stopped between the row write and the archive. Neither the pull
+     * request's state nor the grace window is asked again, because the press
+     * already decided and a dismissed row is one James is done with. AC-AT3.
+     */
+    if (record.dismissedAt) {
+      /*
+       * Dismissed before a dismissal archived anything, so there is no archive
+       * to finish. Checked here rather than beside the stamp above because it
+       * is a statement about the press, not about the workspace, and the
+       * merged-or-closed route below still settles the row normally. AC-AT8.
+       */
+      if (record.keptWorkspace) continue;
+      if (dryRun) {
+        log(`reap: would archive ${workspaceId} for ${record.key} (dismissed)`);
+        continue;
+      }
+      await archiveRecordWorkspace(record, "the row was dismissed");
+      continue;
+    }
+
+    if (record.state !== "created") continue;
 
     let prState: PullRequestState | undefined;
     try {
@@ -101,26 +128,14 @@ export async function reap(dryRun: boolean): Promise<void> {
       continue;
     }
 
-    try {
-      await archiveWorkspace(workspaceId);
-      await updateState((fresh) => {
-        const current = fresh.intake.find(
-          (candidate) => candidate.key === record.key,
-        );
-        if (current) {
-          current.state = "archived";
-          current.archivedAt = new Date().toISOString();
-        }
-      });
-      log(`reap: archived ${workspaceId} for ${record.key} (${prState})`);
-      ledger({
-        source: "github",
-        subject: record.key,
-        what: `archived, the pull request is ${prState.toLowerCase()}`,
-        url: keyUrl(record.key),
-      });
-    } catch (error) {
-      log(`reap: archive failed for ${record.key}: ${String(error)}`);
-    }
+    // One write for both: the workspace is gone and the record has settled.
+    await archiveRecordWorkspace(
+      record,
+      `the pull request is ${prState.toLowerCase()}`,
+      (fresh) => {
+        fresh.state = "archived";
+        fresh.archivedAt = new Date().toISOString();
+      },
+    );
   }
 }

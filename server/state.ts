@@ -35,7 +35,7 @@ export interface RadarState {
    * GitHub gave its comments has been. Set only on a clean pass, so a run that
    * died partway resumes on the next start and skips the rounds it finished.
    */
-  backfill: { commentIds?: number };
+  backfill: { commentIds?: number; dismissedWorkspaces?: number };
 }
 
 const DEFAULT_STATE: RadarState = {

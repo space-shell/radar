@@ -1437,6 +1437,70 @@ request was reopened" as the stated reason, which was not true.
       for the rest. The footer rendered `lastError` unclamped, so a launch
       failure pushed the whole screen down by a page of argv. Awaiting the app.
 
+## AT. A dismissal takes the workspace with it, and says so
+
+Dismissing a row left its workspace standing, so the inbox tidied and Paseo did
+not: 66 workspaces and 76 agents, which is the load the whole design exists to
+hold down. The press now archives the workspace.
+
+The asked-for other half cannot be built. `paseo workspace --help` lists setup,
+create, ls, rename and archive; the SDK's `client.workspaces` carries list, open,
+create, ref, archive and subscribe; the installed `@getpaseo/plugin` dist holds
+no workspace unarchive and the MCP tool set has none either. The app does it over
+the daemon's internal `workspace.archive.undo.request`, which plugin code cannot
+send, exactly as with `workspace.pin.set.request`. So Restore returns the row and
+not the workspace, and every surface that could imply otherwise says so instead.
+
+- [x] **AC-AT1** Dismissing a row archives its workspace at the press. The row is
+      written first and the archive asked for second, so a daemon that will not
+      answer cannot cost James the press, and the ledger carries the dismissal's
+      own line rather than the archive's. A record with no workspace, which is
+      every `dry-run` and `unmapped` row, costs nothing. Verified by probe.
+- [x] **AC-AT2** The record's own state is untouched. A dismissal archives a
+      workspace while the pull request is still open, so `state` stays where it
+      was and only `workspaceArchivedAt` moves. Writing `archived` instead would
+      hand `reconcileAgents`' wake branch a record that never merged, and it
+      would read every sweep after as "the pull request was reopened", which is
+      the exact lie AC-AS5 exists to stop. Verified by probe.
+- [x] **AC-AT3** A refused archive costs the press nothing and is not swallowed.
+      The row is down, nothing is stamped, the reason is raised as a warning
+      beside the row and logged saying it will try again, and the next reap
+      finishes it without asking GitHub for a pull request state or waiting out
+      a grace window: the press already decided. Verified by probe.
+- [x] **AC-AT4** Restore brings the row back and nothing else, and no screen
+      implies more. The dismiss node says "Its workspace was archived. Nothing
+      unarchives a Paseo workspace, so Restore brings the row back and not the
+      workspace"; `recordMeta` appends `workspace archived`, so the row and the
+      detail footer read the same thing from one helper; and the footer withdraws
+      the Workspace link, whose id still resolves to something that cannot be
+      worked in. Verified by probe for the summary line, awaiting the app for the
+      node and the link.
+- [x] **AC-AT5** The archive is attempted once. `workspaceArchivedAt` is the
+      guard, and `state === "archived"` carries the same guard for the rows
+      settled before the stamp existed; without both, every legacy row would draw
+      one refused `paseo workspace archive` a tick for ever. Dismissing an already
+      dismissed row, and restoring then dismissing again, archive nothing more.
+      Verified by probe.
+- [x] **AC-AT6** Retry is the way back, and the only one. A dismissal takes the
+      agent with the workspace, so the record lands at `orphaned`, which is
+      retryable, reading "the workspace was archived when the row was dismissed"
+      rather than the fault wording a session that broke would get. A retry that
+      adopts or launches clears the stamp, so a live worktree is never described
+      as an archived one. Verified by probe.
+- [ ] **AC-AT7** Pressing Dismiss on the phone takes the row down at once and the
+      workspace is gone from Paseo's own list within a few seconds, with no error
+      toast. Pressing Restore brings the row back carrying the archived note.
+      Awaiting the app.
+- [x] **AC-AT8** The change is not retroactive. A row dismissed before a
+      dismissal archived anything keeps its workspace: the press that took it
+      down was made when Dismiss meant hide the row, so it never agreed to lose
+      a workspace, and the archive has no inverse. One pass at the first start
+      after this shipped marks every such row, before the first tick, because
+      the reaper's backstop would otherwise have swept all 102 of them on the
+      sweep ten minutes later. The pass records that it ran, so a row dismissed
+      from here on is never marked and its press archives normally. Verified by
+      probe, and by the live log line naming the 102 rows it kept.
+
 ## Awaiting the app
 
 Every criterion below is built and typechecked. None can be ticked from here: each asserts
@@ -1501,6 +1565,7 @@ invocation command, so there is no route to them except the running app.
 | AC-AQ14                        | One Review again press on a record whose head has moved, read on the node and in the findings file              |
 | AC-AQ15                        | The wizard on that second round, read for the marks and the switches                                            |
 | AC-AS6                         | One look at a record carrying a launch failure, on the row and then on the detail                               |
+| AC-AT4, AC-AT7                 | One Dismiss press, then Paseo's own workspace list, then Restore                                                |
 
 ## Non-goals
 

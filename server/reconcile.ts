@@ -202,8 +202,22 @@ async function agentPass(): Promise<void> {
       if (!ending) {
         if (record.state !== "created") continue;
         record.state = "orphaned";
-        record.lastError = "the agent was archived or deleted";
-        log(`${record.key} lost its agent, marking orphaned`);
+        /*
+         * A dismissal takes the workspace with it, and the agent goes with the
+         * workspace. That is the row doing what it was told, not a session
+         * breaking, so it must not read as a fault: `orphaned` is still right
+         * because the session really is gone and `orphaned` is retryable,
+         * which is the only route back to a workspace. AC-AT6.
+         */
+        const dismissed = Boolean(record.workspaceArchivedAt);
+        record.lastError = dismissed
+          ? "the workspace was archived when the row was dismissed"
+          : "the agent was archived or deleted";
+        log(
+          dismissed
+            ? `${record.key} lost its agent with its archived workspace`
+            : `${record.key} lost its agent, marking orphaned`,
+        );
         continue;
       }
 

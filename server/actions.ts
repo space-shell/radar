@@ -4,6 +4,7 @@ import {
   resolveLaunch,
   type LaunchTarget,
 } from "./intake";
+import { archiveRecordWorkspace } from "./archive";
 import { forgetLostTurns, reviewOf } from "../shared/review";
 import { causeOf } from "./exec";
 import { withdrawAcknowledgement } from "./acknowledge";
@@ -122,6 +123,7 @@ export async function retryRecord(key: string): Promise<RetryResult> {
         fresh.state = "created";
         fresh.agentId = existing.agentId;
         fresh.workspaceId = existing.workspaceId;
+        delete fresh.workspaceArchivedAt;
         delete fresh.lastError;
         clearRelaunch(fresh);
         clearLostTurns(fresh);
@@ -170,6 +172,10 @@ export async function retryRecord(key: string): Promise<RetryResult> {
       // old one. Keeping their ids would point the next QA run at an agent in a
       // worktree that no longer holds this pull request.
       delete fresh.taskAgents;
+      // A new workspace exists, so the stamp saying the old one is gone is
+      // spent. Without this the row keeps reading "workspace archived" over a
+      // live worktree, and the footer keeps hiding the link to it. AC-AT6.
+      delete fresh.workspaceArchivedAt;
       delete fresh.lastError;
       clearRelaunch(fresh);
       clearLostTurns(fresh);
@@ -229,9 +235,37 @@ async function withdrawEyes(key: string): Promise<string | undefined> {
 }
 
 /**
+ * Archives the workspace behind a row that has just gone down.
+ *
+ * Read fresh rather than passed in, because the dismissal wrote in between and
+ * the archive has to see its own stamp. A record with no workspace, which is
+ * every `dry-run` and `unmapped` row, costs nothing here.
+ */
+async function releaseWorkspace(key: string): Promise<string | undefined> {
+  const state = await loadState();
+  const record = state.intake.find((candidate) => candidate.key === key);
+  if (!record) return undefined;
+
+  const result = await archiveRecordWorkspace(record, "the row was dismissed");
+  return result.ok
+    ? undefined
+    : `the workspace could not be archived: ${result.error ?? "no reason given"}`;
+}
+
+/**
  * Hides or restores a row. The acknowledgement is the one thing a dismissal takes
  * with it, per AC-H2. Every other stage survives untouched, so a restored record
  * comes back where it left off. AC-A9.
+ *
+ * A dismissal also archives the workspace, which is the one part of this that
+ * does not come back. There is no unarchive on any surface a plugin can reach,
+ * so Restore returns the row and not the workspace, and the screens say so
+ * rather than letting the control imply otherwise. AC-AT1, AC-AT4.
+ *
+ * Order matters and is the point: the row is written first, so a daemon that
+ * will not answer cannot cost James the press, and the ledger line is the
+ * dismissal's rather than the archive's. The archive then runs bounded, its
+ * failure raised as a warning and retried by the next reap. AC-AT3.
  */
 export async function dismissRecord(
   key: string,
@@ -241,16 +275,21 @@ export async function dismissRecord(
   const ok = await mutateRecord(key, (record) => {
     record.dismissedAt = dismissed ? new Date().toISOString() : null;
   });
-  if (ok) {
-    log(`${dismissed ? "dismissed" : "restored"} ${key}`);
-    ledger({
-      source: "github",
-      subject: key,
-      what: dismissed ? "dismissed" : "restored",
-      url: keyUrl(key),
-    });
-  }
-  return warning ? { ok, warning } : { ok };
+  if (!ok) return warning ? { ok, warning } : { ok };
+
+  log(`${dismissed ? "dismissed" : "restored"} ${key}`);
+  ledger({
+    source: "github",
+    subject: key,
+    what: dismissed ? "dismissed" : "restored",
+    url: keyUrl(key),
+  });
+
+  const refused = dismissed ? await releaseWorkspace(key) : undefined;
+  // Both raised rather than the first of the two: they are separate failures
+  // and reporting one would hide the other. AC-AT5.
+  const raised = [warning, refused].filter(Boolean).join("; ");
+  return raised ? { ok, warning: raised } : { ok };
 }
 
 /**

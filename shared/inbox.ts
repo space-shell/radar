@@ -81,7 +81,7 @@ export const intakeRecordSchema = z.object({
   linearUrl: z.string().nullable().optional(),
   /** Failed lookups so far. Stops an unreachable body being refetched forever. R11. */
   linearAttempts: z.number().optional(),
-  /** Set when James dismisses the row. Hides it from the default view; archives nothing. */
+  /** Set when James dismisses the row. Hides it, and archives its workspace. AC-AT1. */
   dismissedAt: z.string().nullable().optional(),
   /** Why the last action on this record failed, for AC-A4. */
   lastError: z.string().optional(),
@@ -129,6 +129,39 @@ export const intakeRecordSchema = z.object({
    * request that had merged four hours earlier. AC-AS5.
    */
   archivedAt: z.string().optional(),
+  /**
+   * When this record's Paseo workspace was archived, by whichever writer did it.
+   *
+   * Separate from `archivedAt`, which says the *record* settled. A dismissal
+   * archives the workspace while the pull request is still open, so the record
+   * keeps its own state and only this stamp moves. Collapsing the two would
+   * hand the wake branch a record that never merged, and it would read every
+   * sweep after as `the pull request was reopened`.
+   *
+   * There is no way back. `paseo workspace archive` exists; nothing unarchives.
+   * Not the CLI, which lists only setup, create, ls, rename and archive; not
+   * the SDK, whose `workspaces` carries no such method; not the MCP tools. The
+   * app does it over the internal `workspace.archive.undo.request` route, which
+   * a plugin cannot reach, exactly like `workspace.pin.set.request`.
+   *
+   * So this stamp does three jobs: it stops a second archive being attempted,
+   * it is the reaper's "already done" guard, and it is what the screens read to
+   * say the workspace is gone rather than letting Restore imply otherwise.
+   * AC-AT1.
+   */
+  workspaceArchivedAt: z.string().optional(),
+
+  /**
+   * Set once, at the first start after dismissal began archiving, on a row that
+   * was already dismissed. It means: this dismissal was pressed when a dismissal
+   * did not take the workspace, so the press never agreed to lose it.
+   *
+   * The reaper's dismissal branch is a backstop for an archive the press started
+   * and did not land. A row dismissed before the press archived anything had no
+   * such archive to finish, and the archive has no inverse, so sweeping them up
+   * would spend workspaces on a decision nobody made. AC-AT8.
+   */
+  keptWorkspace: z.boolean().optional(),
   /**
    * How many times a failed launch has been tried again on its own, and when it
    * was last tried. Absent until the first automatic attempt. AC-AS2.

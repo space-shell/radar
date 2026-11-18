@@ -33,5 +33,9 @@ export function recordMeta(record: IntakeRecord): string {
   const parts: string[] = record.state === "created" ? [] : [record.state];
   parts.push(age(record.firstSeen));
   if (record.dismissedAt) parts.push(`dismissed ${age(record.dismissedAt)}`);
+  // Said without an age. The dismissal beside it already carries the when, and
+  // the point of this is that the workspace is not coming back, not how long
+  // ago it went. AC-AT4.
+  if (record.workspaceArchivedAt) parts.push("workspace archived");
   return parts.join(" · ");
 }

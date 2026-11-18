@@ -547,6 +547,18 @@ export function Detail({
                       that opens it is. Without it a record whose head has moved
                       looks identical here to one that has not, and the pill
                       saying so is three screens away on the inbox. AC-AQ14. */}
+                  {/* Said on the node that caused it, where the control that
+                      looks like it should undo it is. Restore brings the row
+                      back and nothing else can bring the workspace back: no
+                      Paseo surface a plugin can reach unarchives one. Saying
+                      it here is the whole of the honesty this costs. AC-AT4. */}
+                  {node === "dismiss" && record.workspaceArchivedAt ? (
+                    <Prose style={styles.nodeNote}>
+                      Its workspace was archived. Nothing unarchives a Paseo
+                      workspace, so Restore brings the row back and not the
+                      workspace.
+                    </Prose>
+                  ) : null}
                   {node === "feedback" && moved ? (
                     <Prose style={styles.nodeMoved}>
                       {"\u2191"} New commits since round {rounds}
@@ -654,7 +666,10 @@ export function Detail({
               <Text style={styles.link}>{issueKey(record.linearUrl)}</Text>
             </ExternalLink>
           ) : null}
-          {openWorkspace && workspaceId ? (
+          {/* Withdrawn once the workspace is archived: the id still resolves
+              and the press would open a workspace that cannot be worked in.
+              The meta line a few rows down says where it went. AC-AT4. */}
+          {openWorkspace && workspaceId && !record.workspaceArchivedAt ? (
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={`Open the workspace for ${record.key}`}

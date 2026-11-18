@@ -56,6 +56,7 @@ import { reconcileAgents } from "./server/reconcile";
 import { attachHooks, settleDue } from "./server/hooks";
 import { singleFlight } from "./server/single-flight";
 import { backfillCommentIds } from "./server/rereview";
+import { keepDismissedWorkspaces } from "./server/archive";
 import { refreshStatuses } from "./server/status";
 import { runSummary as runSummaryFor } from "./server/summary";
 import {
@@ -412,7 +413,15 @@ export default function contribute(server: PluginServerContext) {
   void backfillCommentIds().catch((error) =>
     log(`comment ids not backfilled: ${String(error)}`),
   );
-  void run();
+  /*
+   * The first tick waits for this one, unlike the comment ids above: the reaper
+   * archives the rows it would have marked, and that has no inverse. A failure
+   * still starts the loop, because the thing that failed is the state file and a
+   * reaper that cannot read it cannot archive anything either. AC-AT8.
+   */
+  void keepDismissedWorkspaces()
+    .catch((error) => log(`dismissed workspaces not marked: ${String(error)}`))
+    .then(() => run());
 
   return () => {
     stopped = true;
