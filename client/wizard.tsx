@@ -554,8 +554,8 @@ export function Wizard({
     /*
      * The route back, named for the control the map will actually draw.
      *
-     * A `done` QA node offers Undo or Reopen and no Run at all, so "Run QA from
-     * the review map" sent James to look for a control that was not there. The
+     * A `done` QA node offers Reopen and no Run at all, so "Run QA from the
+     * review map" sent James to look for a control that was not there. The
      * ordinary way to reach this screen is a findings file that has gone while
      * the stage still reads `done`. Read through `stageEvents`, so the sentence
      * cannot drift from what the map offers.
@@ -563,7 +563,7 @@ export function Wizard({
     const offered = open ? stageEvents(open, "qa") : ["RUN"];
     const route = offered.includes("RUN")
       ? "Run QA from the review map, then come back."
-      : `QA has already finished, so the map offers ${offered.includes("UNDO") ? "Undo" : "Reopen"} rather than Run. Press it there, run QA again, then come back.`;
+      : "QA has already finished, so the map offers Reopen rather than Run. Press it there, run QA again, then come back.";
 
     return (
       <View style={styles.screen}>

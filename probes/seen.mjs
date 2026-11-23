@@ -13,7 +13,6 @@ const check = (name, got, want) => {
 
 const at = (minutesAgo) => new Date(Date.now() - minutesAgo * 60_000).toISOString();
 const pending = () => ({
-  acknowledge: { status: "pending" },
   qa: { status: "pending" },
   verification: { status: "pending" },
   feedback: { status: "pending" },

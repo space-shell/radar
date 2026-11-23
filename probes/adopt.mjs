@@ -20,7 +20,7 @@ const seed = async (qa) => {
   await writeFile(statePath, JSON.stringify({
     seenPullRequests: ["o/r#1"],
     intake: [{ key: "o/r#1", repo: "o/r", number: 1, title: "t", firstSeen: START, state: "created", agentId: "a",
-      review: { acknowledge: { status: "done" }, qa, verification: { status: "pending" }, feedback: { status: "pending" } } }],
+      review: { qa, verification: { status: "pending" }, feedback: { status: "pending" } } }],
   }, null, 2));
 };
 const findings = async (generatedAt, count) => {

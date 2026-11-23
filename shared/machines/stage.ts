@@ -2,9 +2,7 @@ import { and, setup } from "../vendor/xstate.mjs";
 import {
   RUNNABLE_STAGES,
   SKIPPABLE_STAGES,
-  UNDOABLE_STAGES,
   isQueued,
-  laterStagesStarted,
   nodeStatus,
   stageBlocked,
   type Reviewable,
@@ -18,18 +16,12 @@ export interface StageContext {
    * reached here and nothing may be done to it yet. AC-J7, AC-AG2.
    */
   blocked: boolean;
-  /** Anything after this stage has left pending, which withdraws Undo. AC-D6. */
-  laterMoved: boolean;
   /** Claimed but not sent: the press is waiting for a busy agent. AC-AF23. */
   queued: boolean;
 }
 
 export type StageEvent =
-  | { type: "RUN" }
-  | { type: "SKIP" }
-  | { type: "REOPEN" }
-  | { type: "UNDO" }
-  | { type: "CANCEL" };
+  { type: "RUN" } | { type: "SKIP" } | { type: "REOPEN" } | { type: "CANCEL" };
 
 /**
  * The order controls are offered in, which is also the order they were built in
@@ -39,7 +31,6 @@ export type StageEvent =
 export const STAGE_EVENTS: readonly StageEvent["type"][] = [
   "CANCEL",
   "RUN",
-  "UNDO",
   "REOPEN",
   "SKIP",
 ];
@@ -48,14 +39,14 @@ export const STAGE_EVENTS: readonly StageEvent["type"][] = [
  * What a stage will accept right now.
  *
  * This was six rows of a table written as a conditional cascade in the detail
- * view, in three different syntactic shapes, with the availability of Skip and
- * Undo decided by two `includes` calls forty lines further up. The rows:
+ * view, in three different syntactic shapes, with the availability of Skip
+ * decided by an `includes` call forty lines further up. The rows:
  *
  * | status  | reached | offered                |
  * | ------- | ------- | ---------------------- |
  * | queued  | any     | Cancel                 |
  * | running | any     | nothing                |
- * | done    | any     | Undo, else Reopen      |
+ * | done    | any     | Reopen                 |
  * | skipped | any     | Run, Reopen            |
  * | failed  | any     | Run, Reopen, Skip      |
  * | pending | yes     | Run, Skip              |
@@ -70,12 +61,6 @@ export const STAGE_EVENTS: readonly StageEvent["type"][] = [
  * `done` through the action that performed it, never through a press on this
  * screen. So it is resolved at the stored status and asked what it will accept,
  * rather than started and driven. `machine.resolveState` is the whole binding.
- *
- * The one rule worth naming, because the cascade could not: Reopen on a settled
- * stage is guarded by the negation of Undo's guard. A completed stage offers one
- * control, and which one it is depends on whether a stage further down the map
- * has moved. The two guards being each other's negation is what keeps that from
- * being an accident.
  */
 export const stageMachine = setup({
   types: {} as {
@@ -86,22 +71,15 @@ export const stageMachine = setup({
   guards: {
     /** Something is wired behind it, so Run would not answer "not built yet". */
     runnable: ({ context }) => RUNNABLE_STAGES.includes(context.stage),
-    /** Acknowledge is absent: it is where the pull request is read. AC-O1, AC-O2. */
+    /** Feedback is absent: a review with nothing said is Dismiss. AC-AG7. */
     skippable: ({ context }) => SKIPPABLE_STAGES.includes(context.stage),
-    /** Undo is offered while its effect can still be taken back cleanly. AC-D6. */
-    undoable: ({ context }) =>
-      UNDOABLE_STAGES.includes(context.stage) && !context.laterMoved,
-    notUndoable: ({ context }) =>
-      !UNDOABLE_STAGES.includes(context.stage) || context.laterMoved,
     reached: ({ context }) => !context.blocked,
     /**
      * The press has not been sent yet, so it can still be taken back.
      *
-     * Deliberately not also guarded by `reached`. Undoing acknowledge while QA is
-     * queued makes acknowledge the current node again, and a currency guard would
-     * leave that queued press uncancellable while it still held a lane. The
-     * converse, a queued QA withdrawing acknowledge's Undo, is `laterMoved` doing
-     * what it is for. AC-AF24.
+     * Deliberately not also guarded by `reached`. A stage can stop being the
+     * current node while its press still holds a lane, and a currency guard would
+     * leave that press uncancellable. AC-AF24.
      */
     cancellable: ({ context }) => context.queued,
   },
@@ -134,8 +112,7 @@ export const stageMachine = setup({
     },
     done: {
       on: {
-        UNDO: { target: "pending", guard: "undoable" },
-        REOPEN: { target: "pending", guard: "notUndoable" },
+        REOPEN: { target: "pending" },
       },
     },
     skipped: {
@@ -171,7 +148,6 @@ export function stageEvents(
   const context: StageContext = {
     stage,
     blocked: stageBlocked(record, stage),
-    laterMoved: laterStagesStarted(record, stage),
     queued: isQueued(record, stage),
   };
   const snapshot = stageMachine.resolveState({

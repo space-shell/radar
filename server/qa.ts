@@ -12,6 +12,7 @@ import { clearArtifact, prepareArtifact, writeArtifact } from "./artifact";
 import { keyUrl, note as ledger } from "./ledger";
 import { log } from "./log";
 import { briefPath } from "./briefs";
+import { addEyes } from "./reactions";
 import {
   carryFor,
   scopeFor,
@@ -142,9 +143,16 @@ function prompt(
 }
 
 /**
- * Reviews the code and leaves the result in a file. Nothing is posted anywhere:
- * what James says on the pull request is decided in the feedback wizard, from
- * findings he has read. AC-E7.
+ * Reviews the code and leaves the result in a file. Nothing is posted anywhere
+ * about the code: what James says on the pull request is decided in the feedback
+ * wizard, from findings he has read. AC-E7.
+ *
+ * The one thing it does say is that the review has started. QA is the first
+ * stage, so this press is the moment a pull request stops waiting, and the eyes
+ * reaction is how the author learns that without being told. It rides on the
+ * claim rather than on the turn so that a queued press marks the pull request
+ * now: the lane can hold a press for an hour, and an author watching for a
+ * signal should not have to wait out an agent they cannot see. AC-D1.
  */
 export function runQa(key: string, paseo: Paseo): Promise<StageResult> {
   return runStage(
@@ -197,7 +205,18 @@ export function runQa(key: string, paseo: Paseo): Promise<StageResult> {
 
         return countNote(file.findings.length, scope);
       }),
-    { background: true, gate: (record) => gateFor(paseo, record, "qa") },
+    {
+      background: true,
+      // Named here rather than in `addEyes`, because the sentence this becomes is
+      // the press's, not the reaction's: the toast reads "QA started, but ...".
+      onClaim: (record) =>
+        addEyes(record.repo, record.number).catch((error: unknown) => {
+          throw new Error(
+            `the eyes reaction could not be posted: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }),
+      gate: (record) => gateFor(paseo, record, "qa"),
+    },
   );
 }
 

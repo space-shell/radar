@@ -465,14 +465,16 @@ export const setStage = defineRpc({
 export const runStageAction = defineRpc({
   name: "radar.stage.run",
   input: z.object({ key: z.string(), stage: z.enum(REVIEW_STAGES) }),
-  output: z.object({ ok: z.boolean(), error: z.string().optional() }),
-});
-
-/** Takes a stage's effect back. Acknowledge removes its reaction. AC-D6. */
-export const undoStageAction = defineRpc({
-  name: "radar.stage.undo",
-  input: z.object({ key: z.string(), stage: z.enum(REVIEW_STAGES) }),
-  output: z.object({ ok: z.boolean(), error: z.string().optional() }),
+  output: z.object({
+    ok: z.boolean(),
+    error: z.string().optional(),
+    /**
+     * The stage started, but something it does on the press did not. QA posts
+     * the eyes reaction when it is claimed, and a GitHub that refuses that is
+     * not a reason to lose the run. AC-D2.
+     */
+    warning: z.string().optional(),
+  }),
 });
 
 /**

@@ -3,7 +3,7 @@ the pull request, with an agent's reading of the diff waiting in it, and keeps a
 ledger of what arrived and what was done about it.
 
 Nothing progresses on its own. The daemon only takes work in and reports what it
-finds; acknowledging, reviewing, verifying and replying are each a press.
+finds; reviewing, verifying and replying are each a press.
 
 ## How it works
 
@@ -18,11 +18,12 @@ and say what it found, in one message. No agent is ever spawned to detect anythi
 and nothing else runs until you press something: the detail view's four-field
 summary is a second turn, and it costs one only when you ask for it.
 
-Each record then carries five nodes: acknowledge, QA, verification, feedback and
-dismiss. Acknowledge posts the eyes reaction, which is the only thing the plugin
-writes to GitHub without you pressing something on that record. QA and verification
-run an agent in the record's own workspace and leave their results in a file outside
-every checkout. Feedback is a wizard over those findings that submits one review.
+Each record then carries four nodes: QA, verification, feedback and dismiss. QA
+leads, and pressing it posts the eyes reaction to the pull request whether the turn
+starts now or queues behind the agent, so starting a review is one press rather than
+two. Dismissing takes the reaction back off. QA and verification run an agent in the
+record's own workspace and leave their results in a file outside every checkout.
+Feedback is a wizard over those findings that submits one review.
 
 One GraphQL query per sweep reads what GitHub says about every tracked pull request,
 so a row can read "merged" or "approved by a teammate" before you open it.
@@ -111,9 +112,9 @@ them.
 
 ## What it writes, and where
 
-To GitHub: the eyes reaction on acknowledge, its removal on undo or dismiss, and one
-review when you submit the feedback wizard. Nothing else, and nothing at all from a
-timer.
+To GitHub: the eyes reaction on the QA press, its removal when the review is
+submitted or the record is dismissed, and one review when you submit the feedback
+wizard. Nothing else, and nothing at all from a timer.
 
 To disk: `seen.json`, `OPEN.md`, a weekly ledger file, and one summary or findings
 file per pull request. Nothing is ever written inside a checkout.

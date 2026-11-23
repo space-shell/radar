@@ -7,11 +7,11 @@ import {
 import { archiveRecordWorkspace } from "./archive";
 import { forgetLostTurns, reviewOf } from "../shared/review";
 import { causeOf } from "./exec";
-import { withdrawAcknowledgement } from "./acknowledge";
 import { discoverCheckouts } from "./repos";
 import { keyUrl, note as ledger } from "./ledger";
 import { loadState, updateState } from "./state";
 import { pullRequestUrl, type IntakeRecord } from "../shared/inbox";
+import { removeEyes } from "./reactions";
 import { log } from "./log";
 import { setupCommand } from "./setup";
 
@@ -212,26 +212,30 @@ export interface DismissResult {
  * Takes the eyes reaction back before the row goes down, so no pull request is
  * left marked as watched by something James has put aside. AC-H2.
  *
- * A failure here does not block the dismissal. The row is local housekeeping and
- * GitHub being unreachable is not a reason to refuse it. `runStage` has already
- * recorded the reason on the stage, so it survives on the record; the caller
- * raises it as a warning so the press does not look wholly clean.
+ * Asked unconditionally, with nothing stored consulted first. `removeEyes`
+ * re-reads the live list and answers `false` when there is nothing of ours
+ * there, so GitHub is the record of whether a reaction exists and this plugin
+ * keeps no second copy that could disagree with it. The old gate read the
+ * acknowledge stage, which went stale the moment a reaction was cleared by hand.
  *
- * Restore does not re-add the reaction. The stage is back at pending, so
- * re-acknowledging is a press away, and no GitHub write happens that James did
- * not ask for.
+ * A failure here does not block the dismissal. The row is local housekeeping and
+ * GitHub being unreachable is not a reason to refuse it; the caller raises it as
+ * a warning so the press does not look wholly clean.
+ *
+ * Restore does not put the reaction back. Running QA again is a press away, and
+ * no GitHub write happens that James did not ask for.
  */
 async function withdrawEyes(key: string): Promise<string | undefined> {
   const state = await loadState();
   const record = state.intake.find((candidate) => candidate.key === key);
-  // Nothing to take back unless this record carries an acknowledgement.
-  if (!record || reviewOf(record).acknowledge.status !== "done")
-    return undefined;
+  if (!record) return undefined;
 
-  const result = await withdrawAcknowledgement(key);
-  return result.ok
-    ? undefined
-    : `the eyes reaction could not be removed: ${result.error ?? "no reason given"}`;
+  try {
+    await removeEyes(record.repo, record.number);
+    return undefined;
+  } catch (error) {
+    return `the eyes reaction could not be removed: ${error instanceof Error ? error.message : String(error)}`;
+  }
 }
 
 /**

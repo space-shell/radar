@@ -84,8 +84,8 @@ export async function reconcileStages(): Promise<void> {
       }
 
       if (!AGENT_STAGES.includes(name)) {
-        // Acknowledge and Feedback run inside one RPC call, so a restart means it
-        // never committed. Back to pending rather than failed.
+        // Feedback runs inside one RPC call, so a restart means it never
+        // committed. Back to pending rather than failed.
         decisions.push({ key: record.key, stage: name });
         continue;
       }
@@ -146,6 +146,12 @@ export async function reconcileStages(): Promise<void> {
 export interface StageResult {
   ok: boolean;
   error?: string;
+  /**
+   * Something beside the stage itself did not land. The stage still did, which is
+   * why this is not an error: an eyes reaction GitHub refused is worth saying and
+   * is not worth losing a QA run over.
+   */
+  warning?: string;
 }
 
 /**
@@ -313,7 +319,7 @@ export async function setStageStatus(
 }
 
 export interface StageRunOptions {
-  /** Where the stage lands on success. An undo action lands back on pending. */
+  /** Where the stage lands on success. */
   settleAs?: "done" | "pending";
   /**
    * A reason to refuse, or null to proceed. Checked while the claim lock is held,
@@ -330,6 +336,16 @@ export interface StageRunOptions {
    * and the stage's own outcome is what reports the result. AC-Q1, AC-Q2.
    */
   background?: boolean;
+  /**
+   * What the press owes GitHub, as opposed to what the turn owes it.
+   *
+   * Run after the claim is on disk and before the gate, so it happens whether the
+   * stage runs now or waits in a lane: `work` is reached only after promotion,
+   * which can be an hour away and may never come. A throw here is reported as a
+   * warning on the press and settles nothing, because the stage itself is the
+   * thing that was asked for. AC-D1.
+   */
+  onClaim?(record: IntakeRecord): Promise<unknown>;
   /**
    * The agent this stage's work will send a turn to, so the press can wait for
    * that agent instead of being refused.
@@ -429,6 +445,24 @@ export async function runStage(
   };
   inFlight.set(stageKey(key, stage), token);
 
+  /*
+   * Registered first, so a cancel during this read still finds the press. A press
+   * cancelled after the reaction landed keeps it: the eyes say the pull request is
+   * being looked at, which a cancelled QA does not make untrue. Dismiss is what
+   * takes them back. AC-H2.
+   */
+  let warning: string | undefined;
+  if (options.onClaim) {
+    try {
+      await options.onClaim(claimed);
+    } catch (error) {
+      warning = error instanceof Error ? error.message : String(error);
+      log(`${key} stage ${stage} claim side effect failed: ${warning}`);
+    }
+  }
+  const withWarning = (result: StageResult): StageResult =>
+    warning ? { ...result, warning } : result;
+
   const perform = async (): Promise<StageResult> => {
     let failure: string | null = null;
     let cancelled = false;
@@ -508,7 +542,7 @@ export async function runStage(
     }
   };
 
-  if (!options.background) return perform();
+  if (!options.background) return withWarning(await perform());
   /*
    * Nothing is waiting on this one. The stage's own status carries the outcome.
    *
@@ -523,5 +557,5 @@ export async function runStage(
   void perform().catch((error: unknown) => {
     log(`${key} stage ${stage} could not be settled: ${String(error)}`);
   });
-  return { ok: true };
+  return withWarning({ ok: true });
 }

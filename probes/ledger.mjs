@@ -25,7 +25,7 @@ check(`L1 ${weeks.length} ISO weeks match Python`, wrong, 0);
 // L2 to L4. The file shape.
 const monday = new Date(2026, 9, 12, 9, 41);
 await record({ source: "github", subject: "owner/web#9457", what: "review requested, Fix the status bar", url: "https://github.com/owner/web/pull/9457", at: monday });
-await record({ source: "github", subject: "owner/web#9457", what: "acknowledge done", url: "https://github.com/owner/web/pull/9457", at: new Date(2026, 9, 12, 9, 44) });
+await record({ source: "github", subject: "owner/web#9457", what: "qa done, 3 findings", url: "https://github.com/owner/web/pull/9457", at: new Date(2026, 9, 12, 9, 44) });
 await record({ source: "linear", subject: "ENG-1182", what: "assigned", at: new Date(2026, 9, 13, 14, 5) });
 const week = await readFile(ledgerPath(monday), "utf8");
 console.log("---\n" + week + "---");
@@ -46,7 +46,7 @@ check("L8 and one heading for that day", after.match(/^## 2026-10-14 Wednesday$/
 await mkdir(STATE_DIR, { recursive: true });
 const base = { repo: "owner/web", title: "Fix the status bar", firstSeen: new Date(Date.now() - 3 * 86400000).toISOString() };
 await writeFile(statePath, JSON.stringify({ githubLastModified: null, lastSearchAt: null, seenPullRequests: [], intake: [
-  { ...base, key: "owner/web#1", number: 1, state: "created", review: { acknowledge: { status: "done" }, qa: { status: "pending" }, verification: { status: "pending" }, feedback: { status: "pending" } }, linearUrl: "https://linear.app/acme/issue/ENG-1182" },
+  { ...base, key: "owner/web#1", number: 1, state: "created", review: { qa: { status: "pending" }, verification: { status: "pending" }, feedback: { status: "pending" } }, linearUrl: "https://linear.app/acme/issue/ENG-1182" },
   { ...base, key: "owner/web#2", number: 2, state: "archived", pr: { state: "merged", isDraft: false, decision: "approved", approvedBy: [], blockedBy: [], mine: null, checkedAt: new Date().toISOString() } },
   { ...base, key: "owner/web#3", number: 3, state: "created", dismissedAt: new Date().toISOString() },
 ] }));
@@ -67,7 +67,7 @@ check("L11 regenerating leaves one copy", (await readFile(OPEN_PATH, "utf8")).ma
 // why L9 to L11 never did.
 const openState = (keys) => JSON.stringify({ intake: keys.map((n) => ({
   ...base, key: `owner/web#${n}`, number: n, state: "created",
-  review: { acknowledge: { status: "done" }, qa: { status: "pending" }, verification: { status: "pending" }, feedback: { status: "pending" } },
+  review: { qa: { status: "pending" }, verification: { status: "pending" }, feedback: { status: "pending" } },
 })) });
 await writeAtomic(statePath, openState([1, 2, 3]));
 const slow = writeOpen();
@@ -89,7 +89,7 @@ check("L12 keyUrl", [keyUrl("owner/web#9457"), keyUrl("nonsense"), keyUrl("a/b#x
 // L13. A ledger that cannot be written never throws upward.
 await rm(LEDGER_DIR, { recursive: true, force: true });
 await writeFile(LEDGER_DIR, "not a directory");
-note({ source: "github", subject: "owner/web#9457", what: "acknowledge done" });
+note({ source: "github", subject: "owner/web#9457", what: "qa done, 3 findings" });
 await new Promise((resolve) => setTimeout(resolve, 200));
 console.log("pass  L13 note() swallowed the failure and logged it, above");
 

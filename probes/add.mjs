@@ -20,7 +20,6 @@ const record = (fields) => ({
   firstSeen: new Date().toISOString(),
   state: "created",
   review: {
-    acknowledge: { status: "pending" },
     qa: { status: "pending" },
     verification: { status: "pending" },
     feedback: { status: "pending" },

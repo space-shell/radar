@@ -36,7 +36,6 @@ import {
   setDismissed,
   setStage,
   sweepNow,
-  undoStageAction,
 } from "./shared/inbox";
 import { addByLink } from "./server/add";
 import { dismissRecord, relaunchFailed, retryRecord } from "./server/actions";
@@ -48,7 +47,7 @@ import {
 import { writeOpen } from "./server/ledger";
 import { stopLanes } from "./server/queue";
 import { setStageStatus } from "./server/stages";
-import { runStageFor, undoStageFor } from "./server/stage-actions";
+import { runStageFor } from "./server/stage-actions";
 import { adoptFindings } from "./server/qa";
 import { adoptVerification } from "./server/verification";
 import { reap } from "./server/reap";
@@ -371,7 +370,6 @@ export default function contribute(server: PluginServerContext) {
   server.handle(runStageAction, ({ key, stage }, { paseo }) =>
     runStageFor(key, stage, paseo),
   );
-  server.handle(undoStageAction, ({ key, stage }) => undoStageFor(key, stage));
   server.handle(runSummary, ({ key }, { paseo }) => runSummaryFor(key, paseo));
   server.handle(readFeedback, ({ key }) => readFeedbackState(key));
   server.handle(saveDraft, ({ key, draft }) => storeDraft(key, draft));

@@ -35,7 +35,7 @@ const seed = async (verification) => {
   await writeFile(statePath, JSON.stringify({
     seenPullRequests: ["o/r#1"],
     intake: [{ key: "o/r#1", repo: "o/r", number: 1, title: "t", firstSeen: START, state: "created", agentId: "a",
-      review: { acknowledge: { status: "done" }, qa: { status: "done", note: "3 findings" }, verification, feedback: { status: "pending" } } }],
+      review: { qa: { status: "done", note: "3 findings" }, verification, feedback: { status: "pending" } } }],
   }, null, 2));
 };
 const scratch = async (generatedAt, steps) => {

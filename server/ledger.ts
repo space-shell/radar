@@ -144,7 +144,7 @@ function openLine(record: IntakeRecord): string {
   const node = currentNode(record);
   // An archived session has no next stage, whatever the pipeline last recorded.
   // A row whose agent is gone and whose pull request merged was still reading
-  // "Acknowledge" here, off a pipeline that never started, which named work that
+  // "QA" here, off a pipeline that never started, which named work that
   // cannot be done and is not wanted.
   const stage =
     node && record.state !== "archived" ? STAGE_LABELS[node] : "settled";
@@ -225,8 +225,8 @@ export const writeOpen = coalesce(regenerate);
 
 /**
  * The call site every hook uses. A ledger that cannot be written is a failure to
- * log, never a failure of the acknowledgement, the review or the press that
- * caused it, so nothing here is allowed to throw upward.
+ * log, never a failure of the review or the press that caused it, so nothing
+ * here is allowed to throw upward.
  */
 export function note(event: Engagement): void {
   void record(event)

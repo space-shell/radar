@@ -326,8 +326,8 @@ export function Detail({
   const moveStage = (stage: ReviewStage, status: "pending" | "skipped") => () =>
     stageMutation.mutate({ key: record.key, stage, status });
 
-  const act = (stage: ReviewStage, direction: "run" | "undo") => () =>
-    actionMutation.mutate({ key: record.key, stage, direction });
+  const act = (stage: ReviewStage) => () =>
+    actionMutation.mutate({ key: record.key, stage });
 
   /**
    * What this node can be made to do right now. An empty list is the whole point:
@@ -355,21 +355,14 @@ export function Detail({
     // here. Which events those are, and in what order, is `shared/machines/
     // stage.ts`; this function's remaining job is what each one is called and
     // what it does. The server refuses the same events, so the offer and the
-    // answer cannot disagree. AC-O1, AC-O2, AC-D6.
+    // answer cannot disagree. AC-O2.
     const controls: Record<StageEvent["type"], NodeAction> = {
       RUN: {
         label: STAGE_ACTIONS[node],
         confirmLabel: `${STAGE_ACTIONS[node]}?`,
         busyLabel: `${STAGE_ACTIONS[node]}...`,
         busyKey: `${record.key}:${node}:run`,
-        run: act(node, "run"),
-      },
-      UNDO: {
-        label: "Undo",
-        confirmLabel: "Undo?",
-        busyLabel: "Undoing",
-        busyKey: `${record.key}:${node}:undo`,
-        run: act(node, "undo"),
+        run: act(node),
       },
       // Named for what it does on this node rather than for the transition. On
       // feedback with a round already sent, reopening is starting the next round:

@@ -235,7 +235,6 @@ const submitted = {
   comments: 2,
 };
 const closedReview = {
-  acknowledge: { status: "done" },
   qa: { status: "done" },
   verification: { status: "done" },
   feedback: { status: "done" },
@@ -340,7 +339,6 @@ for (const [status, want] of [
           {
             ...record,
             review: {
-              acknowledge: { status: "done" },
               qa: { status },
               verification: { status: "pending" },
               feedback: { status: "pending" },

@@ -26,7 +26,6 @@ import {
   setDismissed,
   setStage,
   sweepNow,
-  undoStageAction,
 } from "../shared/inbox";
 import { readThreads, setThreadResolved } from "../shared/threads";
 import { AGENT_STAGES, STAGE_LABELS, type ReviewStage } from "../shared/review";
@@ -60,8 +59,6 @@ export interface StageInput {
 export interface ActionInput {
   key: string;
   stage: ReviewStage;
-  /** `undo` takes the stage's effect back rather than performing it. AC-D6. */
-  direction: "run" | "undo";
 }
 
 /**
@@ -253,18 +250,16 @@ export function useStagingKeys(): (string | undefined)[] {
 }
 
 /**
- * The side-effecting half: a node's own action, and taking it back. Separate from
- * useStage because that one only moves a flag, while this one reaches GitHub.
+ * The side-effecting half: a node's own action. Separate from useStage because
+ * that one only moves a flag, while this one reaches GitHub.
  */
 export function useStageAction(refresh: () => void) {
   const run = useRpc(runStageAction);
-  const undo = useRpc(undoStageAction);
   const toast = useToast();
 
   return useMutation({
     mutationKey: ACTION_MUTATION,
-    mutationFn: ({ key, stage, direction }: ActionInput) =>
-      direction === "run" ? run({ key, stage }) : undo({ key, stage }),
+    mutationFn: (input: ActionInput) => run(input),
     onSuccess: (result, input) => {
       const what = `${STAGE_LABELS[input.stage]} on ${shortKey(input.key)}`;
       if (!result.ok) {
@@ -278,14 +273,12 @@ export function useStageAction(refresh: () => void) {
        * waiting for the agent to finish what James is typing into it. AC-AF27.
        */
       const started = AGENT_STAGES.includes(input.stage);
-      toast.show(
-        input.direction === "run"
-          ? `${what} ${started ? "started" : "done"}`
-          : `${what} undone`,
-        {
-          variant: "success",
-        },
-      );
+      toast.show(`${what} ${started ? "started" : "done"}`, {
+        variant: "success",
+      });
+      // The stage took, and something it owed GitHub did not. Said after the
+      // success rather than instead of it, because both are true. AC-D2.
+      if (result.warning) toast.error(`${what} started, but ${result.warning}`);
     },
     onError: (caught, input) =>
       toast.error(
@@ -295,13 +288,13 @@ export function useStageAction(refresh: () => void) {
   });
 }
 
-/** Keyed by direction as well as stage, for the reason useStagingKeys is. AC-Q5. */
+/** Keyed the way useStagingKeys is, so Run and Skip light separate spinners. AC-Q5. */
 export function useActingKeys(): (string | undefined)[] {
   return useMutationState({
     filters: { mutationKey: ACTION_MUTATION, status: "pending" },
     select: (mutation: Mutation<unknown, Error, ActionInput>) => {
       const input = mutation.state.variables;
-      return input && `${input.key}:${input.stage}:${input.direction}`;
+      return input && `${input.key}:${input.stage}:run`;
     },
   });
 }

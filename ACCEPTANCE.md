@@ -19,18 +19,18 @@ verified live. Those are collected under "Awaiting the app" at the foot of this 
 | A     | Row actions: retry, dismiss, restore         | yes   | 6 / 11   |
 | B     | Dismissed rows view                          | yes   | 2 / 4    |
 | C     | Review pipeline model                        | yes   | 6 / 7    |
-| D     | Stage 1, Acknowledge                         | yes   | 5 / 6    |
-| E     | Stage 2, QA                                  | yes   | 6 / 8    |
-| F     | Stage 3, Verification                        | yes   | 3 / 7    |
-| G     | Stage 4, Feedback wizard                     | yes   | 25 / 25  |
-| H     | Stage 5, Dismiss                             | yes   | 4 / 4    |
+| D     | The eyes reaction, posted on the QA press    | yes   | 5 / 6    |
+| E     | Stage 1, QA                                  | yes   | 6 / 8    |
+| F     | Stage 2, Verification                        | yes   | 3 / 7    |
+| G     | Stage 3, Feedback wizard                     | yes   | 25 / 25  |
+| H     | Stage 4, Dismiss                             | yes   | 4 / 4    |
 | I     | Guardrails, apply throughout                 | part  | 8 / 9    |
 | J     | Metro map visualisation                      | yes   | 9 / 12   |
 | K     | Pull request summary                         | yes   | 5 / 9    |
 | L     | Engagement ledger                            | part  | 12 / 12  |
 | M     | Pull request status on the row               | yes   | 8 / 9    |
 | N     | Sweep on demand, faults as an icon           | yes   | 6 / 8    |
-| O     | Acknowledge cannot be skipped                | yes   | 6 / 7    |
+| O     | Feedback cannot be skipped                   | yes   | 6 / 7    |
 | P     | Nothing about one machine in the source      | yes   | 10 / 10  |
 | Q     | Long turns outlive the call that starts them | yes   | 5 / 8    |
 | R     | An armed control reads as armed              | yes   | 0 / 1    |
@@ -43,7 +43,7 @@ verified live. Those are collected under "Awaiting the app" at the foot of this 
 
 | #   | Question                                                   | Resolution                                                                                                                                                                                                                                                                                                                                                                                         |
 | --- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D1  | Stage controls inline on the row, or on a detail screen?   | Detail screen, carrying a metro map of the five stages. The row keeps a compact strip. Group J                                                                                                                                                                                                                                                                                                     |
+| D1  | Stage controls inline on the row, or on a detail screen?   | Detail screen, carrying a metro map of the stages. The row keeps a compact strip. Group J                                                                                                                                                                                                                                                                                                          |
 | D2  | Does dismiss archive the workspace?                        | No. The reaper keeps its own 24h rule                                                                                                                                                                                                                                                                                                                                                              |
 | D3  | Which GitHub identity authors the reaction and the review? | `space-shell`. Not a choice: it is the only account `gh` holds a token for. `repo` scope already covers reactions and reviews, so no token refresh is needed                                                                                                                                                                                                                                       |
 | D4  | Can a stage be actioned from the row strip?                | No. The strip is read-only. Every stage control lives on the detail screen, so no GitHub write sits behind a 14px square                                                                                                                                                                                                                                                                           |
@@ -71,7 +71,7 @@ shell out.
 - [x] **AC-A11** A record whose agent was archived or deleted leaves the `created` state within one tick and becomes retryable. Verified live 2026-10-15 on PR #9470.
 - [ ] **AC-A7** Dismiss sets `dismissedAt` to an ISO timestamp and removes the row from the default view.
 - [x] **AC-A8** Dismiss and Retry each require a confirm press. A single tap while scrolling cannot fire either. Verified by construction: both go through `ConfirmButton`, whose first press only arms the control and whose armed state expires after 4s.
-- [ ] **AC-A9** Restore clears `dismissedAt` and returns the row to the default view with every stage status intact. Amended by AC-H2: a dismissal returns a `done` acknowledge to `pending`, because it takes the reaction back. Restore itself still changes no stage, and does not re-add the reaction.
+- [ ] **AC-A9** Restore clears `dismissedAt` and returns the row to the default view with every stage status intact. Amended by AC-H2: a dismissal takes the eyes reaction back off the pull request, but it writes no stage. Restore changes no stage either, and does not re-add the reaction. The way back to the reaction is Run QA.
 - [x] **AC-A10** An action in flight replaces its control with a working indicator naming the action, held until the refreshed row lands. No press leaves the row looking idle while work is running. Verified by construction, against query-core 5.104.2: the busy set is read from the mutation cache, and `mutation.js:195` awaits `onSettled` before dispatching `success`. Every mutation here passes the cache invalidation as `onSettled`, so it stays `pending` until the refetch resolves.
 
 ## B. Dismissed rows
@@ -91,16 +91,27 @@ shell out.
 - [x] **AC-C6** The row shows a compact stage strip, one segment per review stage, readable without opening anything. It is read-only and never pressable, per decision D4. The full map and every control live on the detail screen, group J. Verified by construction: the row renders `StageStrip`, which contains no `Pressable` and no handler of any kind.
 - [x] **AC-C7** No stage ever advances on its own. Every transition follows a press. Verified: the only background writer is `reconcileStages`, which can move a stage backwards to `pending` or sideways to `failed`, never forwards.
 
-## D. Stage 1, Acknowledge
+## D. The eyes reaction, posted on the QA press
 
-- [x] **AC-D1** Acknowledge posts the `eyes` reaction to the pull request and nothing else. `server/reactions.ts` is the only module that writes to GitHub, and it has three calls: add, list, delete.
+This was a stage of its own, pressed before QA. It is not a decision: the moment James
+starts a review is the moment he runs QA, and a stage asking him to say so first was a
+press that did nothing but tell GitHub what the next press was about to prove. So the
+stage is gone and the reaction rides the QA claim.
+
+The claim, not the turn. `runStage` writes the claim under the state lock and only then
+asks the lane for the agent, which can be an hour away and may never come. Posting from
+`work` would mark the pull request when the turn finally went out rather than when James
+pressed. `StageRunOptions.onClaim` runs between the two, so "performing or queueing" is
+one behaviour rather than two.
+
+- [x] **AC-D1** Pressing Run QA posts the `eyes` reaction to the pull request, whether the stage runs now or waits in a lane. Verified by probe: the press is answered `ok` with the reaction attempted at the claim, before the gate is consulted, and a queued press reaches it with no turn sent.
 - [x] **AC-D2** The reaction is posted to the issues reactions endpoint for the PR number, verified against a real PR. Verified 2026-10-15 against `owner/web#9462`: add left `["space-shell"]`, and the probe restored the PR to the empty state it started in.
-- [x] **AC-D3** Acknowledging a PR that already carries an `eyes` reaction from this account is a no-op, not a duplicate or an error. Verified 2026-10-15: a second add answered 200 rather than 201 and the list stayed at one entry.
-- [x] **AC-D4** Removal re-queries the live reaction list and deletes by the returned id, rather than trusting a stored id. A reaction added by hand in the GitHub UI is therefore removable. Verified 2026-10-15: remove returned true and emptied the list, and a second remove returned false rather than throwing.
-- [x] **AC-D5** A failed reaction call sets the stage to `failed` with the GitHub status code shown, and changes nothing else. Verified 2026-10-15 against a 404: the stage read `failed` with `GitHub returned 404 adding the reaction`.
-- [ ] **AC-D6** Acknowledge is reversible by pressing it again before any later stage runs. Server half verified 2026-10-15: undo removed the reaction, and undo on a record whose QA had moved was refused with `a later stage has already run`, leaving the stage untouched. The press itself is still to do.
+- [x] **AC-D3** Pressing Run QA on a PR that already carries an `eyes` reaction from this account is a no-op, not a duplicate or an error. Verified 2026-10-15: a second add answered 200 rather than 201 and the list stayed at one entry.
+- [x] **AC-D4** Removal re-queries the live reaction list and deletes by the returned id, rather than trusting a stored id. A reaction added by hand in the GitHub UI is therefore removable. Verified 2026-10-15: remove returned true and emptied the list, and a second remove returned false rather than throwing. This two-way idempotence is why no record field tracks the reaction: GitHub is the only record of whether it exists, so nothing stored can disagree with it.
+- [x] **AC-D5** A reaction GitHub refuses does not fail the QA run. The press answers `ok` and carries a `warning`, the client shows the success toast and then the warning beside it, and the stage runs as asked. Verified by probe: with GitHub out of reach the press returned `ok` with `the eyes reaction could not be posted: ...`, and the stage went on to claim, queue, promote and settle normally.
+- [x] **AC-D6** Run QA is the only press that posts it. Skip QA posts nothing, verification posts nothing, and no tick, reconciler or poller holds a reference to `reactions.ts`. Verified by construction and by probe: `onClaim` is declared at one call site, `server/qa.ts`, and `setStageStatus` reaches no GitHub call at all.
 
-## E. Stage 2, QA
+## E. Stage 1, QA
 
 - [x] **AC-E1** QA sends a new prompt to the existing intake agent, through the SDK handle on the RPC context. It never creates a second agent for the same PR. Verified by construction: `server/turn.ts` reaches the SDK only through `agents.ref(record.agentId)`, and `launchIntake` is the one creation site in the plugin, called only from `server/actions.ts`. Confirmed 2026-10-15 against a stand-in SDK whose `create` threw on contact: the happy path never touched it.
 - [x] **AC-E2** QA on a record with no live agent reports that and offers Retry instead of silently doing nothing. Verified 2026-10-15 through the real stage machinery: the stage settled `failed` with `this record has no agent. Retry it to make one`, the record moved to `orphaned` carrying `lastError`, and `orphaned` is one of the three states the row offers Retry for. An agent that is archived, closed or unreadable takes the same route.
@@ -112,25 +123,25 @@ shell out.
 - [x] **AC-E8** QA is skippable, and skipping it leaves Verification and Feedback reachable. Verified by construction: Skip is offered on the current pending stage and on a failed one, and `currentNode` steps over `skipped` exactly as it steps over `done`, so the stage after it becomes current.
 
 A re-run replaces the code findings and carries the verification list across, so QA cannot
-discard work that belongs to stage 3. Verified 2026-10-15: a stale two-finding file was
+discard work that belongs to verification. Verified 2026-10-15: a stale two-finding file was
 replaced by the new one and the previous verification entry survived, with the stage
 settling `done` and noting `1 finding`.
 
-## F. Stage 3, Verification
+## F. Stage 2, Verification
 
 - [x] **AC-F1** Verification sends a prompt to the same existing agent, as in AC-E1. Verified by construction: it calls the same `askAgent`, which only ever reaches `agents.ref`. Confirmed 2026-10-15 against a stand-in SDK whose `create` threw on contact.
 - [ ] **AC-F2** The agent follows the manual verification steps from the PR description, in order. The brief requires each step copied close to verbatim and forbids dropping one, but only a real run shows whether the list matches the description.
 - [ ] **AC-F3** Browser work targets the Vercel preview URL parsed from the PR body, never a local dev server. The parser is verified: on 2026-10-15 it returned the right host for `#9462`, `#9457`, `#9470` and `#9414`, declined a body carrying only the Storybook preview, declined another pull request's preview, and declined `pr-94620` against `9462`. The prompt carries that URL, and says plainly not to start a dev server when there is none. What the browser is actually pointed at needs a real run.
 - [ ] **AC-F4** A step that is not runnable as written is recorded as such, with the reason, rather than skipped quietly. The reason is enforced on read, not asked for: verified 2026-10-15 that a `not runnable` step with a blank detail fails the stage with `a step that did not pass must say why`, and that an empty list fails with `expected array to have >=1 items`. Whether every step in the description reached the list can only be seen on a real run.
 - [x] **AC-F5** Verification results append to the same findings file, tagged with their stage, so Feedback can separate them from code findings per AC-G17. Verified 2026-10-15: the agent writes its own scratch file and the server merges, so it never holds the findings file open. Three steps merged alongside an existing code finding, both lists intact, the scratch file removed. Run in the other order, with no findings file in place, the merge created one with `findings: []`, and QA running afterwards carried the verification list across.
-- [x] **AC-F6** Verification is skippable on the same terms as AC-E8. Verified 2026-10-15: skipping each stage in turn moved the current node to the next one, acknowledge to QA to verification to feedback to dismiss.
+- [x] **AC-F6** Verification is skippable on the same terms as AC-E8. Verified 2026-10-15: skipping each stage in turn moved the current node to the next one, QA to verification to feedback to dismiss.
 - [ ] **AC-F7** No database connection is opened to any host that is not localhost. The plugin opens no database connection at all and names no database host. The agent half is a hard rule in the brief and needs a real run.
 
 A failed verification run leaves the code findings alone. Verified 2026-10-15 across three
 failure paths: a missing result file, an empty list and a step with no reason. Each failed
 the stage and left the existing findings file exactly as QA wrote it.
 
-## G. Stage 4, Feedback wizard
+## G. Stage 3, Feedback wizard
 
 - [x] **AC-G1** The wizard opens as its own screen, taking the record key as a param. Amended by D6, as AC-J1 was: a screen cannot open another screen, so the wizard is a third view of the `inbox` screen, opened from the Feedback node on the detail map and returning to it.
 - [x] **AC-G2** It walks findings one at a time, showing path, line, severity, and the agent's proposed comment. Verified by construction: one step per finding, then the verification step, then the preview. `blocking` prints in the danger colour and the word is always there, so colour is never the only signal.
@@ -162,17 +173,17 @@ the stage and left the existing findings file exactly as QA wrote it.
 - [x] **AC-G27** It is only ever switched on, never off. Clearing the box leaves the comment included, sending the agent's own wording, which is what an empty replacement has always meant. Withdrawing a comment stays a press rather than a consequence of a backspace. Verified by construction: the handler returns early on empty text.
 - [ ] **AC-G28** The switch is seen to move as the first character lands, and the field does not lose focus or the cursor when it does. The field is uncontrolled and its `key` does not change, so the re-render cannot remount it, but the look of it awaits the app.
 
-## H. Stage 5, Dismiss
+## H. Stage 4, Dismiss
 
 - [x] **AC-H1** Dismiss from the pipeline behaves identically to AC-A7. Verified by construction: the dismiss node and the row control both call the `radar.inbox.dismiss` RPC, which has one writer, `dismissRecord`. What that writer does is AC-A7's own claim, still awaiting a press.
-- [x] **AC-H2** Dismissing a record still carrying an eyes reaction removes the reaction, so no PR is left marked as watched. Verified live 2026-10-15 against `owner/web#9462`: the reaction was present before the press and gone after, the stage returned to `pending`, and the PR was left as found. The withdrawal ignores the later-stage guard that AC-D6 applies to Undo, because a row James has put down must not stay marked whatever ran after it. A failed withdrawal does not block the dismissal: a 404 returned `ok` with a warning, and the reason was stored on the stage.
+- [x] **AC-H2** Dismissing a record removes the eyes reaction, so no PR is left marked as watched. Verified live 2026-10-15 against `owner/web#9462`: the reaction was present before the press and gone after, and the PR was left as found. The removal is unconditional and consults nothing stored first. The old gate read the acknowledge stage, which went stale the moment a reaction was cleared by hand, and a gate on `qa.status` would be worse: QA done, then reopened to pending, would skip the removal and leave a dismissed PR marked. `removeEyes` answers `false` rather than throwing when there is nothing there, so the unguarded call costs one GitHub read on a human-paced press. A failed withdrawal does not block the dismissal: verified by probe that with GitHub out of reach the row still went down, the workspace was still archived, and the refusal came back as a warning.
 - [x] **AC-H3** Dismiss does not archive the workspace. See decision D2. Verified by construction: `dismissRecord` touches one field, and the reaper reads PR state and agent idleness, never `dismissedAt`.
 - [x] **AC-H4** Dismiss is available at any stage, not only after Feedback. Verified by construction: the dismiss node's action list reads only `dismissedAt`, never a stage status, so no pipeline position can withdraw it.
 
 ## I. Guardrails
 
 - [x] **AC-I1** No stage contacts a human on Slack, in Linear, or by email. GitHub review mechanics are the only outward channel. Verified by construction: the plugin holds no Slack client, no mail client and no Linear write path. `server/reactions.ts` is the only outward write in the codebase, and it writes one reaction.
-- [x] **AC-I2** Every GitHub write follows a press by James in an attended session. No scheduled or background path can post. Verified by construction: `runStage` is reachable only from the `radar.stage.run` and `radar.stage.undo` handlers. No interval, tick or reconciler calls it, and the pollers hold no reference to `reactions.ts`.
+- [x] **AC-I2** Every GitHub write follows a press by James in an attended session. No scheduled or background path can post. Verified by construction: `runStage` is reachable only from the `radar.stage.run` handler, and `removeEyes` only from `dismissRecord` and the feedback submit. No interval, tick or reconciler calls it, and the pollers hold no reference to `reactions.ts`.
 - [x] **AC-I3** Nothing merges a PR, marks a draft ready, closes a Linear issue, commits, or pushes. Verified 2026-10-15: a search for merge, ready-for-review, close, commit and push calls across the plugin returns only `server/reap.ts` reading a PR's `MERGED` state.
 - [x] **AC-I4** No output anywhere contains an em dash. Verified 2026-10-15: a search for the character across the plugin, briefs included, returns nothing.
 - [x] **AC-I5** No credential is logged, including the GitHub token and the Linear key. Verified 2026-10-15: no `log()` call takes a token, and the token reaches exactly two places, the `Authorization` header in `server/github.ts` and the one in `server/reactions.ts`.
@@ -184,11 +195,11 @@ the stage and left the existing findings file exactly as QA wrote it.
 ## J. Metro map visualisation
 
 - [ ] **AC-J1** A row tap opens the detail view, and `params.key` opens it directly when the screen is opened with that param. Amended by D6: a screen has no `openScreen`, so the detail cannot be a second screen.
-- [x] **AC-J2** The map shows all five stages in order, connected, so position in the process reads at a glance. Verified by construction: the detail renders `MAP_NODES` in declaration order with a `Connector` between each pair.
+- [x] **AC-J2** The map shows every stage in order, connected, so position in the process reads at a glance. Verified by construction: the detail renders `MAP_NODES` in declaration order with a `Connector` between each pair.
 - [x] **AC-J3** Status is carried by shape or label as well as colour. Colour alone never distinguishes two states. Verified by construction: `nodeAppearance` gives each status its own glyph, `▸ ✓ – !` and blank, and every node on the detail prints its status word beside the label.
 - [x] **AC-J4** The current stage is distinct from both completed and pending stages. Verified by construction: the current node draws a 2px accent border where every other node draws 1px, and `currentNode` never returns a `done` or `skipped` node, so the marker cannot land on a finished stage.
 - [x] **AC-J5** A skipped stage renders as bypassed, visibly different from completed. Verified by construction: skipped is a dashed outline carrying `–`, completed is a solid success fill carrying `✓`. The two differ in glyph, fill and border style, not only colour.
-- [x] **AC-J6** A failed stage renders distinctly and surfaces its reason without a further tap. Verified by construction: failed is a danger fill carrying `!`, and the detail prints `stage.error` on the node's own line. Verified live 2026-10-15 for the text that reaches it: a failed acknowledge stores `GitHub returned 404 adding the reaction`.
+- [x] **AC-J6** A failed stage renders distinctly and surfaces its reason without a further tap. Verified by construction: failed is a danger fill carrying `!`, and the detail prints `stage.error` on the node's own line. Verified live 2026-10-15 for the text that reaches it: a failed stage stores the sentence GitHub answered with.
 - [ ] **AC-J7** Tapping a node runs or opens that stage. Nodes that cannot run yet are visibly inert and not pressable.
 - [x] **AC-J8** Built from React Native View primitives. No SVG dependency is added. Verified 2026-10-15: `package.json` carries no SVG package, and no `svg` identifier appears anywhere in the plugin. Every node and every connector is a `View`.
 - [ ] **AC-J9** The whole map is legible at the compact breakpoint without horizontal scrolling. Built vertical at every width, so there is no horizontal axis to overflow.
@@ -243,7 +254,7 @@ needs nothing further can be dismissed where it is read.
 - [x] **AC-M2** A merged, closed, approved or blocked pull request is visible on the inbox row without opening it. Verified by construction: `StatusBadge` renders `statusNote(record.pr)` inside the row's meta line, above the Dismiss control that was already there. Awaiting the app for the look itself.
 - [x] **AC-M3** "Approved" on the row means approved by someone other than James. His own review never reads as another team member's. Verified live: `viewer.login` is `space-shell`, and the probe's 13 label cases include approvals by others, by James alone, and by both, each rendering the right text.
 - [x] **AC-M4** Precedence is fixed and testable: merged and closed outrank every review, and one request for changes outranks any number of approvals. Verified live: 13 cases through `statusNote`, including merged over blocked and blocked over approved.
-- [x] **AC-M5** `OPEN.md` cannot call a merged pull request open. Verified live: the probe's standing list reads `merged, Acknowledge, created, tracked 1d`, and the age word changed from `open` to `tracked` so the two cannot contradict.
+- [x] **AC-M5** `OPEN.md` cannot call a merged pull request open. Verified live: the probe's standing list reads `merged, QA, created, tracked 1d`, and the age word changed from `open` to `tracked` so the two cannot contradict.
 - [x] **AC-M6** Reading a status never dismisses, archives or advances anything. The press stays James'. Verified by construction: `refreshStatuses` writes `record.pr` and nothing else, and no caller acts on what it wrote.
 - [x] **AC-M7** The whole inbox costs one request per sweep, not two per row. Verified by construction: one aliased GraphQL document covers every record, capped at 40 records and 20 reviews each.
 - [x] **AC-M8** One deleted or unreachable pull request costs only its own badge. Verified live: an alias for `#999999` returned `NOT_FOUND`, was logged, and the other six statuses were stored unaffected.
@@ -265,20 +276,21 @@ title on every orphaned row while the same sentence already sat on the detail vi
 - [ ] **AC-N7** The full reason stays readable on the detail view. The detail footer already renders `record.lastError` in full and was not changed. Awaiting the app for the look.
 - [ ] **AC-N8** The icon carries the reason to a screen reader. Written as `accessibilityLabel={`Fault: ${record.lastError}`}`. Not ticked: no screen reader has been run against this screen, here or anywhere else in the plugin.
 
-## O. Acknowledge cannot be skipped
+## O. Feedback cannot be skipped
 
-Acknowledge is where the pull request and its summary are actually read, and the eyes
-reaction it posts is the one outward signal that the review is under way. A skip would
-move the pipeline past both while claiming neither happened. So the stage is removed
-from the set a Skip is built for, and the server refuses the same transition.
+Written for Acknowledge, which no longer exists. The group survives because the rule
+does: one stage in the pipeline may not be skipped, and the map and the server have to
+agree about which. That stage is now Feedback, for the reason AC-AG7 gives. A record
+marked finished with nothing written is a map that lies about what was done, and "this
+one needs nothing from me" is Dismiss.
 
-- [x] **AC-O1** The map builds no Skip control for Acknowledge. Verified by construction and by probe: `SKIPPABLE_STAGES` holds `qa`, `verification` and `feedback` only, `actionsFor` builds `skip` as null outside that set, and both return branches that offered it now spread a possibly-empty list.
-- [x] **AC-O2** The server refuses a skip on Acknowledge, so a call that bypassed the screen gets the answer the screen would have given. Verified live under a redirected HOME: `setStageStatus` returned `{ ok: false, error: "Acknowledge cannot be skipped" }`.
+- [x] **AC-O1** The map builds no Skip control for Feedback. Verified by construction and by probe: `SKIPPABLE_STAGES` holds `qa` and `verification` only, `actionsFor` builds `skip` as null outside that set, and both return branches that offered it spread a possibly-empty list.
+- [x] **AC-O2** The server refuses a skip on Feedback, so a call that bypassed the screen gets the answer the screen would have given. Verified under a redirected HOME: `setStageStatus` returned `{ ok: false, error: "Feedback cannot be skipped" }`.
 - [x] **AC-O3** A refused skip changes nothing. Verified: the stage stayed `{ status: "pending" }` and no ledger directory was created.
-- [x] **AC-O4** QA, Verification and Feedback still skip. Verified: all three returned `ok` and landed `skipped`.
-- [x] **AC-O5** The refusal is about skipping, not about the stage. Acknowledge still reopens. Verified: a `done` acknowledge reopened to `pending`.
-- [x] **AC-O6** A running stage still refuses for its own reason, which is the older and more specific one. Verified: a running acknowledge returned `acknowledge is running`, not the skip refusal.
-- [ ] **AC-O7** The Acknowledge node offers Acknowledge and nothing else when pending, and Acknowledge plus Reopen when failed. Awaiting the app for the look.
+- [x] **AC-O4** QA and Verification still skip. Verified: both returned `ok` and landed `skipped`.
+- [x] **AC-O5** The refusal is about skipping, not about the stage. Feedback still reopens. Verified: a `done` feedback reopened to `pending`.
+- [x] **AC-O6** A running stage still refuses for its own reason, which is the older and more specific one. Verified: a running QA returned `qa is running`, not the skip refusal.
+- [ ] **AC-O7** The Feedback node offers nothing at all when reached and pending: it is finished by writing the review in the wizard, or the record is put down with Dismiss. Awaiting the app for the look.
 
 ## P. Nothing about one machine in the source
 
@@ -315,7 +327,7 @@ Four defects James reported, plus the one the investigation turned up.
 - [x] **AC-Q2** The stage reads `running` while the detached work runs, then settles itself with its own note or its own reason. Verified by probe: `running` mid-work, `done` with `5 findings` after, and a thrown failure landing as `status: "failed"` carrying the message. A second press during the run is refused with `qa is running`, so detaching did not cost the claim.
 - [x] **AC-Q3** The screen knows a summary is still running after the press that started it has returned. The daemon holds the in-flight set and reports it through the inbox as `summarising`; the card is busy on either the local mutation or that list, because the mutation settles in milliseconds and the turn behind it runs for minutes. Verified by probe: the key is listed during the turn and gone once it settles.
 - [x] **AC-Q4** A failed summary says why, on the record rather than in a toast. There is no caller left to hand a reason to, and a toast fired at a window James has since left carries nothing, so `summaryError` is stored and the card shows it. Verified by probe: a refused turn wrote the reason, a later success cleared it, and the stale reason is cleared before a new run so a spinner never sits next to an old failure.
-- [ ] **AC-Q5** Pressing Run QA spins Run QA alone. Both in-flight selectors keyed by `${key}:${stage}`, which every control on that node matched, so Run QA lit Skip's `Skipping` label as well. The key now carries the transition: `:run`, `:undo`, `:pending`, `:skipped`, `:dismiss:`. Node-level `busy` survives as a prefix test, which is what still locks the siblings. Awaiting the app for the look.
+- [ ] **AC-Q5** Pressing Run QA spins Run QA alone. Both in-flight selectors keyed by `${key}:${stage}`, which every control on that node matched, so Run QA lit Skip's `Skipping` label as well. The key now carries the transition: `:run`, `:pending`, `:skipped`, `:dismiss:`. Node-level `busy` survives as a prefix test, which is what still locks the siblings. Awaiting the app for the look.
 - [ ] **AC-Q6** A running stage opens. `disabled` was derived from the node having no actions, and a running stage correctly offers none, so the one node worth watching was the only one that would not open. `expandable` is now actions, or the feedback wizard, or an agent link, which is what James wants from a running QA node. Awaiting the app for the look.
 - [ ] **AC-Q7** The generated summary collapses to its headline. The chevron is a fixed width so the headline starts at the same column either way, and the controls and any failure stay visible collapsed. AC-K4's re-run path is unchanged. Awaiting the app for the look.
 - [x] **AC-Q8** A findings file written after its own stage gave up is adopted rather than discarded. A daemon restart fails the stage while the agent carries on, and the file lands minutes later with nobody waiting: #9462's turn wrote 5 findings four minutes after its stage had failed. `adoptFindings` runs on the reconcile tick, takes only a `failed` stage, and only a file newer than that attempt's `startedAt`. `pending` is a Reopen, which is a decision to run it again, and `skipped` is a decision not to, so neither is touched. Verified by probe against the #9462 timings exactly.
@@ -472,10 +484,10 @@ node offers.
 - [x] **AC-W3** A keystroke still costs no render. `draftRef` is untouched, `type()` writes the ref alone, and no `onChangeText` sends a machine event: the only sends in the wizard are the query sync, its recount, and the two footer arrows. A draft in machine context would have cost a render per character, because `useMachine` re-renders on every transition, which is why the machine holds the step and nothing else. AC-G6 unbroken. Verified by construction.
 - [x] **AC-W4** Entering the wizard from anywhere but a detail is unrepresentable: `OPEN_WIZARD` exists only on `detail`. A record named from elsewhere while the wizard is open is ignored rather than honoured, which is a deliberate change: honouring it would unmount the wizard without saving, dropping keystrokes held in the ref. The old code avoided the same hazard by keeping a second key, without saying so. V4, V8.
 - [x] **AC-W9** The map comes back from the wizard as it was left. The expanded node was `useState` inside the detail view, which unmounts when the wizard opens, so pressing Write feedback on the feedback node and returning gave a fully collapsed map every time. It sits in the view machine's context beside the key, is cleared when the record changes or the list is reached, and survives the round trip. V10, V11.
-- [x] **AC-W5** All six rows of the node action table are asserted in both directions. The cascade it replaced is transcribed into the probe as an oracle, and the machine is checked against it on all 80 fixtures, which cover 70 distinct combinations of stage, status, currency and whether a later stage has moved. The count was first written as 60 on the belief that a current stage could never sit behind a moved one. Reopen makes it: `currentNode` is the first stage not done or skipped, so reopening acknowledge while QA is done produces exactly that. S1, S1b to S5.
-- [x] **AC-W6** The machine's guards and the server's enforcement agree: everything the map offers, the server accepts, over the same 60 combinations. One-directional on purpose, because the server is a backstop against a call that bypassed the screen and legitimately permits more than the map offers. The two rules the server holds alone, no move on a running stage and no skipping acknowledge, are asserted on both sides. R1 to R3.
+- [x] **AC-W5** Every row of the node action table is asserted in both directions. The cascade it replaced is transcribed into the probe as an oracle, and the machine is checked against it on all 45 fixtures, which cover 25 distinct combinations of stage, status and reach. The grid shrank twice: once when the acknowledge stage went, and once when Undo went with it, which removed "has a later stage moved" as an input to anything. S1, S1b to S5.
+- [x] **AC-W6** The machine's guards and the server's enforcement agree: everything the map offers, the server accepts, over the same 25 combinations. One-directional on purpose, because the server is a backstop against a call that bypassed the screen and legitimately permits more than the map offers. The two rules the server holds alone, no move on a running stage and no skipping feedback, are asserted on both sides. R1 to R3.
 - [x] **AC-W7** The wizard's five screens are one state value and the guard order is the precedence. They were four sequential early returns reading three sources, so which won was decided by position. A list that changes under a walk in progress is a RECOUNT, which re-clamps the step and re-dispatches the screen: QA runs from the map and is an agent, so it can finish while this screen is open. The anchor re-check moved from an effect with a suppressed dependency list to an `entry` action on the preview, which is the sentence the suppression was standing in for. W1 to W19. The probes drive the machine, not the component, so the render gate that reads `view.matches` is outside their reach and is verified in the app.
-- [ ] **AC-W8** A completed node's control says which of Undo or Reopen it is, and why, rather than swapping identity silently. Held: the machine now states the rule, `UNDOABLE_STAGES.includes(stage) && !laterMoved` against its exact negation, but saying it on screen is a wording change and James has not yet said which journeys feel wrong. Diagnosis done, no change made.
+- [x] **AC-W8** A completed node's control says which of Undo or Reopen it is, and why, rather than swapping identity silently. Settled by removal: Undo existed only for Acknowledge, which is gone, so a done node offers Reopen and nothing else, on every stage alike. The control cannot swap identity because there is only one. Verified by probe: no stage, in any status, still answers to `UNDO`. S4.
 
 ## X. Nothing moves when it is pressed
 
@@ -755,7 +767,7 @@ one rule that reads `running` to tell a QA turn from a summary turn.
 - [x] **AC-AF21** The reconciler never fails a stage this process has in flight, however the agent reads. This is the second defect: the agent is idle for the whole prep window, and failing a stage there handed the node a Run control for work already under way. A stage nobody is holding still fails on the same reading, which is what the rule is for. Verified by probe.
 - [x] **AC-AF22** A findings file written before promotion is still not adopted. Verified by probe.
 - [x] **AC-AF23** A queued stage offers Cancel and nothing else. A started one still offers nothing, which is what the map has always said about a running stage. Verified by probe.
-- [x] **AC-AF24** Cancel carries no currency guard. Undoing acknowledge while QA is queued makes acknowledge current again, and a currency guard would leave that press holding a lane with no way to let go of it. The converse, a queued QA withdrawing acknowledge's Undo, is the later-stage rule doing what it is for. Verified by probe.
+- [x] **AC-AF24** Cancel carries no currency guard. Reopening QA while verification is queued makes QA current again, and a currency guard would leave verification's press holding a lane with no way to let go of it. Verified by probe.
 - [x] **AC-AF25** Queued parts from running in glyph, fill and border style, so neither colour nor shape alone carries it, and no two statuses share a glyph. AC-C3. Verified by probe.
 - [x] **AC-AF26** Two overlapping `OPEN.md` writes both land, the file holds one whole body rather than half of each, that body is the freshest read, and no temp file survives. Every writer now renames a uniquely named temp file, and the regeneration is coalesced, so N overlapping notes cost at most one trailing rewrite and the last body written is the newest. Verified by probe.
 - [ ] **AC-AF27** Pressing Run QA while typing into the agent leaves the node reading `queued` with a Cancel control, and it starts on its own within ten seconds of the turn ending. Awaiting the app.
@@ -985,14 +997,14 @@ and nothing about the host is assumed.
 The spinner on the summary card is driven by `awaitingSummary`, which reads the
 agent's status because nothing else knows an intake turn is still writing. It
 excluded any record with a stage reading `running`, which was written for QA and
-verification sharing the intake agent and caught two more stages besides. So
-pressing Acknowledge mid-summary emptied the card until the reaction came back,
-and a queued QA emptied it for the whole of the turn it was queued behind.
+verification sharing the intake agent and caught the other stages besides. So a
+stage that never touches the agent emptied the card anyway, and a queued QA
+emptied it for the whole of the turn it was queued behind.
 
 - [x] **AC-AM1** Only a started QA or verification is treated as the agent being
-      busy with something other than the summary. Acknowledge and feedback are a
-      `gh` call inside one RPC and never reach the agent, so neither stops the
-      spinner. Verified by probe.
+      busy with something other than the summary. Feedback runs inside one RPC
+      call and never reaches the agent, so it does not stop the spinner.
+      Verified by probe.
 - [x] **AC-AM2** A queued stage does not stop it either. The press has landed but
       the turn has not been sent, so what the agent is running is still the
       summary. Verified by probe.
@@ -1276,7 +1288,7 @@ screen cannot reach it.
       transition, so it sent James to look for a `Reopen` the screen does not
       have. Verified by probe.
 - [ ] **AC-AR5** The wizard's unavailable screen names the control the review map
-      will actually draw. A `done` QA node offers Undo or Reopen and no Run at
+      will actually draw. A `done` QA node offers Reopen and no Run at
       all, and the ordinary way to reach that screen is a findings file that has
       gone while the stage still reads `done`, so `Run QA from the review map`
       named a control that was not there. Read through `stageEvents`, which is
@@ -1528,7 +1540,7 @@ invocation command, so there is no route to them except the running app.
 | AC-A7, AC-A9                   | One Dismiss press, then Restore                                                                                 |
 | AC-B1, AC-B2                   | A look at the dismissed toggle with at least one row behind it                                                  |
 | AC-C5                          | A daemon restart while a stage is `running`                                                                     |
-| AC-D6                          | One Acknowledge press, then Undo, on a live PR                                                                  |
+| AC-D1, AC-D5                   | One Run QA press on a live PR, read for the eyes reaction, then the same with GitHub out of reach               |
 | AC-H2 warning path             | A dismiss while GitHub is unreachable, to see the toast                                                         |
 | AC-E4, AC-E7                   | One real QA run, then `git status` in the worktree and the PR's comment list                                    |
 | AC-F2, AC-F3, AC-F4            | One real verification run, read against the description's own steps                                             |
@@ -1548,7 +1560,7 @@ invocation command, so there is no route to them except the running app.
 | AC-M2                          | A look at the inbox with the five merged rows badged, then one dismiss from the row                             |
 | AC-N1, AC-N2                   | One press on the clock badge, watched for the working indicator and the reset to `0m`                           |
 | AC-N6, AC-N7                   | A look at #9485, which carries a fault, on the row and then on the detail                                       |
-| AC-O7                          | A look at the Acknowledge node on a pending record, checked for the absence of Skip                             |
+| AC-O7                          | A look at the Feedback node on a reached, pending record, checked for the absence of every control              |
 | AC-Q5, AC-Q6                   | One Run QA press on a live record, watched for a single spinner and a node that opens while running             |
 | AC-Q7                          | One tap on the summary headline, collapsed and expanded                                                         |
 | AC-AN6                         | The verification verdict on the first pull request summarised after this landed                                 |

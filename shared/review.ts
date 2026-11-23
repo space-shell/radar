@@ -10,12 +10,7 @@ export const stageStatusSchema = z.enum([
 export type StageStatus = z.infer<typeof stageStatusSchema>;
 
 /** Stages holding their own stored lifecycle. Dismiss is derived from dismissedAt. */
-export const REVIEW_STAGES = [
-  "acknowledge",
-  "qa",
-  "verification",
-  "feedback",
-] as const;
+export const REVIEW_STAGES = ["qa", "verification", "feedback"] as const;
 export type ReviewStage = (typeof REVIEW_STAGES)[number];
 
 /** Stages that run through the intake agent, so a daemon restart can strand them. */
@@ -26,21 +21,10 @@ export const AGENT_STAGES: readonly ReviewStage[] = ["qa", "verification"];
  * button never appears for something that would answer "not built yet". Feedback
  * joins them with group G.
  */
-export const RUNNABLE_STAGES: readonly ReviewStage[] = [
-  "acknowledge",
-  "qa",
-  "verification",
-];
-
-/** Stages whose effect can be taken back. Acknowledge removes its reaction. AC-D6. */
-export const UNDOABLE_STAGES: readonly ReviewStage[] = ["acknowledge"];
+export const RUNNABLE_STAGES: readonly ReviewStage[] = ["qa", "verification"];
 
 /**
- * Stages that may be passed over. Two are absent deliberately.
- *
- * Acknowledge is where the pull request and its summary are read, and the eyes
- * reaction it posts is the one outward signal that the review is under way.
- * Skipping it would claim the review started without anyone having looked.
+ * Stages that may be passed over. Feedback is absent deliberately.
  *
  * Feedback is where the review is written, which is the whole point of the
  * pipeline. A record that can be marked finished with nothing said is a record
@@ -54,7 +38,6 @@ export const SKIPPABLE_STAGES: readonly ReviewStage[] = ["qa", "verification"];
 
 /** What the run control says. The label is the verb, not the noun on the node. */
 export const STAGE_ACTIONS: Record<ReviewStage, string> = {
-  acknowledge: "Acknowledge",
   qa: "Run QA",
   verification: "Run verification",
   feedback: "Write feedback",
@@ -82,7 +65,6 @@ export const stageSchema = z.object({
 export type Stage = z.infer<typeof stageSchema>;
 
 export const reviewSchema = z.object({
-  acknowledge: stageSchema,
   qa: stageSchema,
   verification: stageSchema,
   feedback: stageSchema,
@@ -91,7 +73,6 @@ export type Review = z.infer<typeof reviewSchema>;
 
 export function emptyReview(): Review {
   return {
-    acknowledge: { status: "pending" },
     qa: { status: "pending" },
     verification: { status: "pending" },
     feedback: { status: "pending" },
@@ -136,12 +117,11 @@ export function forgetLostTurns(review: Review): ReviewStage[] {
   return spent;
 }
 
-/** The five nodes the map draws. Dismiss is last and derived. */
+/** The four nodes the map draws. Dismiss is last and derived. */
 export const MAP_NODES = [...REVIEW_STAGES, "dismiss"] as const;
 export type MapNode = (typeof MAP_NODES)[number];
 
 export const STAGE_LABELS: Record<MapNode, string> = {
-  acknowledge: "Acknowledge",
   qa: "QA",
   verification: "Verification",
   feedback: "Feedback",
@@ -187,22 +167,6 @@ export function displayStatus(
   node: MapNode,
 ): DisplayStatus {
   return isQueued(record, node) ? "queued" : nodeStatus(record, node);
-}
-
-/**
- * Whether anything after this stage has moved off pending. Undo is only offered
- * while the answer is no, so taking back an acknowledgement cannot leave a later
- * stage resting on something that is no longer true. The server and the map read
- * this same rule, so what is offered and what is allowed cannot disagree. AC-D6.
- */
-export function laterStagesStarted(
-  record: Reviewable,
-  stage: ReviewStage,
-): boolean {
-  const review = reviewOf(record);
-  return REVIEW_STAGES.slice(REVIEW_STAGES.indexOf(stage) + 1).some(
-    (later) => review[later].status !== "pending",
-  );
 }
 
 /**

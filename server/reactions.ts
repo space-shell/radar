@@ -1,9 +1,15 @@
 import { call } from "./api";
 
 /**
- * The acknowledgement, and the only GitHub write this plugin makes outside the
- * feedback wizard. Nothing here comments, reviews, approves or edits.
- * AC-D1, AC-I1, AC-I3.
+ * The signal that a review has started, and the only GitHub write this plugin
+ * makes outside the feedback wizard. Nothing here comments, reviews, approves or
+ * edits.
+ *
+ * Idempotent in both directions, which is what lets the plugin store nothing
+ * about it: `addEyes` treats an existing reaction as a success, and `removeEyes`
+ * reads the live list before deleting and answers `false` when there is nothing
+ * of ours there. GitHub is the only record of whether the reaction exists, so no
+ * stored flag can disagree with it. AC-D1, AC-H2, AC-I1, AC-I3.
  */
 const CONTENT = "eyes";
 
@@ -32,7 +38,7 @@ function reactionsPath(repo: string, number: number): string {
 
 /**
  * Adds the reaction. GitHub answers 201 when it creates one and 200 when this
- * account already left it, so acknowledging twice is a no-op rather than a
+ * account already left it, so a second Run QA press is a no-op rather than a
  * duplicate or an error. AC-D1, AC-D2, AC-D3.
  */
 export async function addEyes(repo: string, number: number): Promise<void> {

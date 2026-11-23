@@ -139,7 +139,6 @@ const seed = async (feedback, status) => {
             firstSeen: new Date().toISOString(),
             state: "created",
             review: {
-              acknowledge: { status: "done" },
               qa: { status: "done" },
               verification: { status: "done" },
               feedback: { status },

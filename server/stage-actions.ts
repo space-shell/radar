@@ -1,10 +1,8 @@
 import {
   RUNNABLE_STAGES,
   STAGE_LABELS,
-  UNDOABLE_STAGES,
   type ReviewStage,
 } from "../shared/review";
-import { acknowledge, unacknowledge } from "./acknowledge";
 import { runQa } from "./qa";
 import { runVerification } from "./verification";
 import type { StageResult } from "./stages";
@@ -30,8 +28,6 @@ export function runStageFor(
   }
 
   switch (stage) {
-    case "acknowledge":
-      return acknowledge(key);
     case "qa":
       return runQa(key, paseo);
     case "verification":
@@ -40,28 +36,6 @@ export function runStageFor(
       return Promise.resolve({
         ok: false,
         error: `${STAGE_LABELS[stage]} has no action yet`,
-      });
-  }
-}
-
-export function undoStageFor(
-  key: string,
-  stage: ReviewStage,
-): Promise<StageResult> {
-  if (!UNDOABLE_STAGES.includes(stage)) {
-    return Promise.resolve({
-      ok: false,
-      error: `${STAGE_LABELS[stage]} cannot be undone`,
-    });
-  }
-
-  switch (stage) {
-    case "acknowledge":
-      return unacknowledge(key);
-    default:
-      return Promise.resolve({
-        ok: false,
-        error: `${STAGE_LABELS[stage]} cannot be undone`,
       });
   }
 }

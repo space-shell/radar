@@ -33,7 +33,7 @@ const record = (n, extra = {}) => ({
   firstSeen: hours(4),
   state: "created",
   workspaceId: `ws-${n}`,
-  review: { acknowledge: { status: "pending" }, qa: { status: "pending" } },
+  review: { qa: { status: "pending" } },
   ...extra,
 });
 
@@ -138,9 +138,13 @@ const first = await dismissRecord("owner/web#201", true);
 release();
 
 check(first.ok === true, "AT1 the dismissal lands");
+// GitHub is unreachable in a probe: `fake-gh` refuses `auth token`, so the eyes
+// removal fails on every dismissal here. That is the case worth holding, not an
+// awkwardness to work around. A dismissal is a local decision and a GitHub that
+// will not answer must not be able to veto it. AC-H2.
 check(
-  first.warning === undefined,
-  "AT1 and says nothing went wrong",
+  String(first.warning).includes("the eyes reaction could not be removed"),
+  "AT1 and the unreachable GitHub is raised rather than swallowed",
   String(first.warning),
 );
 check(
@@ -235,9 +239,10 @@ check(
 capture();
 const empty = await dismissRecord("owner/web#204", true);
 release();
+check(empty.ok === true, "AT6 a dry-run row's dismissal still lands");
 check(
-  empty.ok === true && empty.warning === undefined,
-  "AT6 a dry-run row has no workspace, so its dismissal is clean",
+  !String(empty.warning).includes("the workspace could not be archived"),
+  "AT6 a dry-run row has no workspace, so nothing is said about archiving one",
   String(empty.warning),
 );
 check(

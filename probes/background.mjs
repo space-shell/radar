@@ -16,7 +16,7 @@ const seed = async () => {
   await writeFile(statePath, JSON.stringify({
     seenPullRequests: ["o/r#1"],
     intake: [{ key: "o/r#1", repo: "o/r", number: 1, title: "t", firstSeen: new Date().toISOString(), state: "created",
-      review: { acknowledge: { status: "done" }, qa: { status: "pending" }, verification: { status: "pending" }, feedback: { status: "pending" } } }],
+      review: { qa: { status: "pending" }, verification: { status: "pending" }, feedback: { status: "pending" } } }],
   }, null, 2));
 };
 const qa = async () => (await loadState()).intake[0].review?.qa;

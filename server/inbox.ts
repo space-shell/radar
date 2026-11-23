@@ -33,12 +33,12 @@ import { summarising } from "./summary";
  * summary is not a summary arriving, and saying so would be a spinner that
  * never resolves. AC-AD7.
  *
- * Those two only, and only once they have started. Acknowledge and feedback are
- * a `gh` call inside one RPC and never reach the agent, so neither says anything
- * about what the agent is doing; a queued stage has not been sent yet, so the
- * turn still running is the summary's. Testing every stage instead put the card
- * back to an empty summary for as long as an acknowledge took, and for the whole
- * of the turn a queued QA was waiting behind. AC-AM1.
+ * Those two only, and only once they have started. Feedback is a `gh` call
+ * inside one RPC and never reaches the agent, so it says nothing about what the
+ * agent is doing; a queued stage has not been sent yet, so the turn still
+ * running is the summary's. Testing every stage instead put the card back to an
+ * empty summary for as long as a submit took, and for the whole of the turn a
+ * queued QA was waiting behind. AC-AM1.
  */
 function awaitingSummary(records: IntakeRecord[]): string[] {
   const live = workingAgents();

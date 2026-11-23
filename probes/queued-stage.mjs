@@ -98,7 +98,6 @@ const seed = async (stage = { status: "pending" }) => {
             agentId: "a1",
             workspaceId: "ws-1",
             review: {
-              acknowledge: { status: "done" },
               qa: stage,
               verification: { status: "pending" },
               feedback: { status: "pending" },
@@ -240,7 +239,16 @@ hold = new Promise((r) => {
   release = r;
 });
 
-check("AF11 the press is answered ok", await runQa(KEY, paseo), { ok: true });
+// GitHub is out of reach here, so every QA press carries the eyes warning. That
+// is the contract: the reaction is reported on the press and settles nothing,
+// because the stage itself is the thing that was asked for. AC-D1.
+const pressed = await runQa(KEY, paseo);
+check("AF11 the press is answered ok", pressed.ok, true);
+check(
+  "AF11 and an eyes reaction GitHub refused is said, not swallowed",
+  String(pressed.warning).startsWith("the eyes reaction could not be posted:"),
+  true,
+);
 await sleep(300);
 const queued = await qa();
 check("AF11 the claim reads running", queued.status, "running");
@@ -424,7 +432,6 @@ await writeAtomic(
           workspaceId: "ws-1",
           taskAgents: { qa: "qa-1" },
           review: {
-            acknowledge: { status: "done" },
             qa: { status: "pending" },
             verification: { status: "pending" },
             feedback: { status: "pending" },
@@ -615,7 +622,7 @@ hold = new Promise((r) => {
 });
 const stageOf = async (name) => (await loadState()).intake[0].review?.[name];
 
-check("AG4 the first press is accepted", await runQa(KEY, paseo), { ok: true });
+check("AG4 the first press is accepted", (await runQa(KEY, paseo)).ok, true);
 check(
   "AG4 and its turn goes out at once",
   await until(async () => sent.length === 1, 2000),
@@ -754,7 +761,6 @@ await writeAtomic(
           workspaceId: "ws-1",
           taskAgents: { qa: "a-qa", verification: "a-ver" },
           review: {
-            acknowledge: { status: "done" },
             qa: { status: "pending" },
             verification: { status: "pending" },
             feedback: { status: "pending" },
