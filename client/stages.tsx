@@ -6,9 +6,10 @@ import {
   findingWord,
   nodeAppearance,
   nodeLabel,
+  verificationAppearance,
   type NodeAppearance,
 } from "../shared/appearance";
-import type { FindingState } from "../shared/findings";
+import type { FindingState, VerificationOutcome } from "../shared/findings";
 import {
   REVIEW_STAGES,
   currentNode,
@@ -115,6 +116,44 @@ export function FindingNode({
       />
       <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>
         {findingWord(state)}
+      </Text>
+    </View>
+  );
+}
+
+/**
+ * A verification step's outcome, as a square and the word GitHub's reader would
+ * use. Drawn the same way a finding's state is, by the same component, so the
+ * two cannot drift apart. The word is not optional. AC-J3, AC-AV1.
+ */
+export function OutcomeNode({
+  outcome,
+  theme,
+  size = 12,
+}: {
+  outcome: VerificationOutcome;
+  theme: PluginTheme;
+  size?: number;
+}) {
+  return (
+    <View
+      accessibilityLabel={`This step ${outcome === "not runnable" ? "could not be run" : outcome}`}
+      style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
+    >
+      <AppearanceNode
+        look={verificationAppearance(outcome, theme)}
+        theme={theme}
+        size={size}
+      />
+      <Text
+        style={{
+          color: theme.colors.foregroundMuted,
+          fontSize: 11,
+          textTransform: "uppercase",
+          letterSpacing: 0.6,
+        }}
+      >
+        {outcome}
       </Text>
     </View>
   );

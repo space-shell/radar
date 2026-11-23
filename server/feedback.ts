@@ -12,7 +12,7 @@ import {
   type ReviewEvent,
   type SubmittedReview,
 } from "../shared/feedback";
-import { reviewOf } from "../shared/review";
+import { reviewOf, type StageStatus } from "../shared/review";
 import { call, githubError } from "./api";
 import { MissingArtifact } from "./artifact";
 import { anchorFault, diffAnchors } from "./diff";
@@ -46,6 +46,8 @@ interface InlineComment {
 export interface FeedbackState {
   findings: Finding[];
   verification: VerificationStep[];
+  /** Why there are no steps, where there are none. AC-AV3. */
+  verificationStage: { status: StageStatus; error?: string; note?: string };
   generatedAt: string | null;
   draft: Draft;
   rounds: SubmittedReview[];
@@ -102,11 +104,20 @@ async function findRecord(key: string): Promise<IntakeRecord> {
 export async function readFeedbackState(key: string): Promise<FeedbackState> {
   const record = await findRecord(key);
   const feedback = feedbackOf(record);
+  const stage = reviewOf(record).verification;
   const base = {
     draft: feedback.draft,
     rounds: roundsOf(feedback),
     carried: feedback.carried ?? [],
     open: roundOpen(record),
+    // Narrowed to the three fields the screen reads rather than passed whole.
+    // The rest of a stage is timing and a claim token, and a wizard that can
+    // see them is a wizard that can start deciding things from them.
+    verificationStage: {
+      status: stage.status,
+      ...(stage.error === undefined ? {} : { error: stage.error }),
+      ...(stage.note === undefined ? {} : { note: stage.note }),
+    },
   };
 
   try {

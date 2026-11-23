@@ -1,5 +1,7 @@
 import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
+import { stageStatusSchema } from "./review";
+import { sliceSentences } from "./sentences";
 import {
   findingSchema,
   findingStateSchema,
@@ -93,6 +95,21 @@ export const draftCommentSchema = z.object({
   include: z.boolean(),
   /** James' own words. Sent verbatim, never rewritten or summarised. AC-G5. */
   text: z.string(),
+  /**
+   * How many leading sentences of the agent's proposal to send. Absent means
+   * all of it, which is what every draft written before this field says.
+   *
+   * An optional key rather than a wider `include`, because `readInboxState`
+   * drops a record whose parse fails and zod strips an unknown key while
+   * rejecting an unknown enum member. A reader on an older copy of this schema
+   * loses the count and posts the whole finding, which is where it started.
+   *
+   * Counted against the exact wording in hand: `anchorKey` digests the body, so
+   * a re-run that rewords a finding drops this along with the replacement typed
+   * for it. That is the right loss. The count answered sentences that are no
+   * longer on the screen. AC-AH2, AC-AU1.
+   */
+  sentences: z.number().int().min(1).optional(),
 });
 export type DraftComment = z.infer<typeof draftCommentSchema>;
 
@@ -327,10 +344,17 @@ export type Fault = z.infer<typeof faultSchema>;
  * the agent's proposal otherwise. His text replaces rather than appends: a
  * comment carrying both would put the agent's prose out under his name next to
  * his own correction of it. AC-G5, AC-G8.
+ *
+ * The sentence count cuts the agent's proposal and never the replacement. A
+ * replacement is already the words James chose, and taking a knife to them
+ * would be the plugin editing him. The slider says as much on the card: with a
+ * replacement typed it has two positions, send and do not. AC-AU3, AC-AU4.
  */
 export function commentBody(finding: Finding, draft: Draft): string {
-  const typed = draft.comments[anchorKey(finding)]?.text.trim() ?? "";
-  return typed.length > 0 ? typed : finding.body;
+  const comment = draft.comments[anchorKey(finding)];
+  const typed = comment?.text.trim() ?? "";
+  if (typed.length > 0) return typed;
+  return sliceSentences(finding.body, comment?.sentences);
 }
 
 export const readFeedback = defineRpc({
@@ -339,6 +363,20 @@ export const readFeedback = defineRpc({
   output: z.object({
     findings: z.array(findingSchema),
     verification: z.array(verificationStepSchema),
+    /**
+     * The verification stage as the record holds it, so an empty list can say
+     * which kind of empty it is.
+     *
+     * A stage that failed or was skipped writes no steps at all, and the screen
+     * answered that with "No verification steps were recorded", which reads as
+     * the agent having looked and found nothing to do. The reason is already on
+     * the record; it was simply never carried this far. AC-AV3.
+     */
+    verificationStage: z.object({
+      status: stageStatusSchema,
+      error: z.string().optional(),
+      note: z.string().optional(),
+    }),
     generatedAt: z.string().nullable(),
     draft: draftSchema,
     /** Every review already sent, oldest first. Empty before the first one. */

@@ -9,7 +9,11 @@ import {
 import { useMachine } from "./vendor/xstate-react.mjs";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { findingAppearance } from "../shared/appearance";
+import {
+  findingAppearance,
+  verificationAppearance,
+  verificationSummary,
+} from "../shared/appearance";
 import { carryWhite, highlight, success, WHITE } from "../shared/colour";
 import {
   anchorKey,
@@ -28,7 +32,9 @@ import type {
   FindingState,
   VerificationStep,
 } from "../shared/findings";
+import { countSentences, sentencesOf, sliceWord } from "../shared/sentences";
 import { stageEvents } from "../shared/machines/stage";
+import type { StageStatus } from "../shared/review";
 import {
   stepLabel,
   wizardMachine,
@@ -38,8 +44,9 @@ import { ConfirmButton } from "./confirm";
 import { age } from "../shared/format";
 import { useKeyboardAvoidance } from "./keyboard";
 import { MultilineInput } from "./multiline";
+import { SentenceSlider } from "./slider";
 import { Prose } from "./prose";
-import { FindingNode } from "./stages";
+import { FindingNode, OutcomeNode } from "./stages";
 import {
   useCheckAnchors,
   useFeedback,
@@ -132,6 +139,24 @@ function styleSheet(theme: PluginTheme, compact: boolean) {
     fault: { color: colors.statusWarning, fontSize: 12, lineHeight: 17 },
     danger: { color: colors.statusDanger, fontSize: 12, lineHeight: 17 },
     step: { gap: 2, padding: 12 },
+    /** One verification step: its square, what was attempted, and the reason. */
+    verify: { gap: 6, padding: 12 },
+    /**
+     * Why a step did not pass, set in from the step the way a reply is set in
+     * from the comment it answers. Full contrast and a rule in the outcome's
+     * own colour: this is the sentence James came to the screen for, and it
+     * used to be the faintest text on the card. AC-AV2.
+     */
+    reason: {
+      color: colors.foreground,
+      fontSize: 12,
+      lineHeight: 17,
+      paddingLeft: 10,
+      borderLeftWidth: 2,
+    },
+    slider: { gap: 8, padding: 12 },
+    /** The part of a proposal the slider is leaving behind. */
+    cut: { color: colors.foregroundMuted },
     outcome: {
       color: colors.foregroundMuted,
       fontSize: 11,
@@ -233,6 +258,35 @@ function carriedCopy(state: FindingState, round: number): string {
       return `Posted in round ${round}, and nothing has happened to it. Switching it on sends a second copy.`;
     default:
       return `Posted in round ${round}. Its thread could not be matched, so what became of it is unknown. Switching it on sends a second copy.`;
+  }
+}
+
+/**
+ * Why the verification list is empty, which is never "the agent found nothing
+ * to check".
+ *
+ * A stage that failed or was skipped writes no file at all, and the screen said
+ * only that no steps were recorded. The reason has always been on the record.
+ * AC-AV3.
+ */
+function emptyVerification(stage?: {
+  status: StageStatus;
+  error?: string;
+  note?: string;
+}): string {
+  switch (stage?.status) {
+    case "skipped":
+      return "Verification was skipped, so no steps were run.";
+    case "failed":
+      return `Verification failed before it recorded any steps. ${stage.error ?? "No reason was given."}`;
+    case "running":
+      return "Verification is running. Its steps arrive when it finishes.";
+    case "pending":
+      return "Verification has not run on this record, so nothing was checked by hand.";
+    case "done":
+      return "Verification finished without recording a single step, which is a result worth distrusting.";
+    default:
+      return "No verification steps were recorded.";
   }
 }
 
@@ -574,12 +628,28 @@ export function Wizard({
     );
   }
 
-  const toggle = (finding: Finding, include: boolean) =>
+  /**
+   * The one write behind every control on a finding's card, so the approval
+   * rule cannot be reached by one route and missed by another.
+   *
+   * `slice` is left undefined where the whole proposal goes out, which is both
+   * what an absent field means and what every draft written before the slider
+   * says. AC-AU1.
+   */
+  const setComment = (
+    finding: Finding,
+    include: boolean,
+    slice: number | undefined,
+  ) =>
     apply((current) => {
       const anchor = anchorKey(finding);
       const comments = {
         ...current.comments,
-        [anchor]: { include, text: commentOf(current, finding).text },
+        [anchor]: {
+          include,
+          text: commentOf(current, finding).text,
+          ...(slice === undefined ? {} : { sentences: slice }),
+        },
       };
       // A blocking finding takes the approval off the table, once, and says which
       // one did it. Nothing in here ever puts it back: that press is James' alone.
@@ -595,9 +665,47 @@ export function Wizard({
       return { ...current, comments };
     });
 
+  /**
+   * On or off with the slice left where it was.
+   *
+   * Used where there is nothing to slice: a one sentence finding, and a card
+   * with a replacement typed into it, which is sent whole whatever the slider
+   * last said. Keeping the stored count through an off means clearing the box
+   * puts the slider back where James left it rather than at the whole finding.
+   * AC-AU4.
+   */
+  const toggle = (finding: Finding, include: boolean) =>
+    setComment(
+      finding,
+      include,
+      commentOf(draftRef.current ?? draft, finding).sentences,
+    );
+
+  /**
+   * A stop on the slider. Zero posts nothing, the last stop posts all of it.
+   *
+   * The count is dropped at the far right rather than stored as the total: a
+   * comment going out whole is never routed through the splitter's idea of
+   * where the sentences are. AC-AU3.
+   */
+  const slide = (finding: Finding, stop: number, total: number) => {
+    const held = commentOf(draftRef.current ?? draft, finding).sentences;
+    if (stop <= 0) return setComment(finding, false, held);
+    return setComment(finding, true, stop >= total ? undefined : stop);
+  };
+
   const findingStep = (finding: Finding, index: number) => {
     const anchor = anchorKey(finding);
     const stored = commentOf(draft, finding);
+    // The proposal cut where it can be cut, and where the slider is set within
+    // it. A replacement replaces the whole proposal, so a card with one typed
+    // has nothing to slice and falls back to the switch. AC-AU4.
+    const replaced = stored.text.trim().length > 0;
+    const parts = sentencesOf(finding.body);
+    const total = parts.length;
+    const sliced = !replaced && total > 1;
+    const held = Math.min(stored.sentences ?? total, total);
+    const sending = stored.include ? held : 0;
     const already = posted.get(anchor);
     // Only ever set on an anchor a round already sent, because the carry is
     // built from those rounds. The round number shown is `already`, the first
@@ -652,7 +760,22 @@ export function Wizard({
             >
               {finding.severity}
             </Text>
-            <Prose style={styles.body}>{finding.body}</Prose>
+            {/* Drawn in pieces only where there is a cut to show. The pieces
+                join back to the body character for character, so the prose on
+                screen is the agent's and not a rejoin of what the splitter
+                took apart. The caption under the slider says the count in
+                words, so the fading is never the only signal. AC-J3, AC-AU2. */}
+            {sliced ? (
+              <Prose style={styles.body}>
+                {parts.map((part, at) => (
+                  <Text key={at} style={at < sending ? undefined : styles.cut}>
+                    {part}
+                  </Text>
+                ))}
+              </Prose>
+            ) : (
+              <Prose style={styles.body}>{finding.body}</Prose>
+            )}
             {/* What the author said back, where they said anything. It is the
                 whole reason a carried card is worth drawing: the decision is
                 whether to say it again, and the answer is in the reply. */}
@@ -686,12 +809,35 @@ export function Wizard({
         </SettingsCard>
 
         <SettingsCard>
-          <SettingsSwitch
-            label="Post this comment"
-            hint="Off until this is switched on, or a replacement is typed below. Nothing else is posted."
-            value={stored.include}
-            onValueChange={(value) => toggle(finding, value)}
-          />
+          {sliced ? (
+            <View style={styles.slider}>
+              <Text style={styles.body}>How much of this to post</Text>
+              <SentenceSlider
+                count={total}
+                value={sending}
+                theme={theme}
+                onChange={(stop) => slide(finding, stop, total)}
+              />
+              <Text style={sending > 0 ? styles.body : styles.muted}>
+                {sliceWord(sending, total)}
+              </Text>
+              <Text style={styles.muted}>
+                The faded text above is not sent. Nothing goes out at the left
+                stop.
+              </Text>
+            </View>
+          ) : (
+            <SettingsSwitch
+              label="Post this comment"
+              hint={
+                replaced
+                  ? "Your replacement is sent whole. Clear the box to post the agent's wording by the sentence."
+                  : "Off until this is switched on, or a replacement is typed below. Nothing else is posted."
+              }
+              value={stored.include}
+              onValueChange={(value) => toggle(finding, value)}
+            />
+          )}
           <MultilineInput
             key={anchor}
             label="Replacement wording"
@@ -734,29 +880,55 @@ export function Wizard({
   const verificationStep = (steps: VerificationStep[]) => (
     <SettingsSection
       title="Verification"
-      info="Read only here. These never become inline comments."
+      info={
+        steps.length === 0
+          ? "Read only here. These never become inline comments."
+          : `${verificationSummary(steps)} Read only here. These never become inline comments.`
+      }
     >
       <SettingsCard>
         {steps.length === 0 ? (
           <View style={styles.step}>
             <Text style={styles.muted}>
-              No verification steps were recorded.
+              {emptyVerification(data?.verificationStage)}
             </Text>
           </View>
         ) : (
-          steps.map((entry) => (
-            <View key={entry.step} style={styles.step}>
-              <Text
-                style={
-                  entry.outcome === "failed" ? styles.danger : styles.outcome
-                }
-              >
-                {entry.outcome}
-              </Text>
+          /* Keyed on the position as well as the text: an agent that writes the
+             same step twice, once run and once not, is two rows and not one. */
+          steps.map((entry, at) => (
+            <View key={`${at}:${entry.step}`} style={styles.verify}>
+              <OutcomeNode outcome={entry.outcome} theme={theme} />
               <Prose style={styles.body}>{entry.step}</Prose>
-              {entry.detail.trim().length > 0 ? (
-                <Prose style={styles.muted}>{entry.detail}</Prose>
-              ) : null}
+              {entry.outcome === "passed" ? (
+                entry.detail.trim().length > 0 ? (
+                  <Prose style={styles.muted}>{entry.detail}</Prose>
+                ) : null
+              ) : (
+                /* Named, not merely shown. The question James came with is why
+                   a step could not be run, and an unlabelled paragraph under a
+                   step reads as more of the step. AC-AV2. */
+                <View style={styles.verify}>
+                  <Text style={styles.outcome}>
+                    {entry.outcome === "failed"
+                      ? "What went wrong"
+                      : "Why it could not be run"}
+                  </Text>
+                  <Prose
+                    style={{
+                      ...styles.reason,
+                      borderLeftColor: verificationAppearance(
+                        entry.outcome,
+                        theme,
+                      ).borderColor,
+                    }}
+                  >
+                    {entry.detail.trim().length > 0
+                      ? entry.detail
+                      : "No reason was recorded, which the schema is supposed to make impossible."}
+                  </Prose>
+                </View>
+              )}
             </View>
           ))
         )}
@@ -831,12 +1003,24 @@ export function Wizard({
 
         {sending.map((finding) => {
           const already = posted.get(anchorKey(finding));
+          const stored = commentOf(draft, finding);
+          // Only where the slider actually took something off. A whole comment
+          // needs no line saying it is whole, and a replacement is whole by
+          // definition. AC-AU5.
+          const whole = countSentences(finding.body);
+          const part =
+            stored.text.trim().length === 0 &&
+            stored.sentences !== undefined &&
+            stored.sentences < whole
+              ? `First ${stored.sentences === 1 ? "sentence" : `${stored.sentences} sentences`} of ${whole}`
+              : null;
           return (
             <SettingsCard key={anchorKey(finding)}>
               <View style={styles.sent}>
                 <Prose style={styles.anchor}>
                   {finding.path}:{finding.line} {finding.side}
                 </Prose>
+                {part ? <Text style={styles.muted}>{part}</Text> : null}
                 {/* Not excluded. Re-raising a comment the author never answered
                     is a thing James does on purpose, so the preview says it is
                     a repeat and leaves the decision where it was made. AC-AP3. */}

@@ -62,10 +62,22 @@ export type Finding = z.infer<typeof findingSchema>;
  * one `{step, outcome: "passed"}` with no `detail` threw away a 17 minute browser
  * run on #9649 including a step that genuinely failed. AC-AO1.
  */
+/**
+ * How a step went. `not runnable` is its own answer and not a soft failure: the
+ * step was never attempted, so nothing was learned either way, and reading it as
+ * a pass is the mistake the screen used to invite by drawing the two alike.
+ */
+export const verificationOutcomeSchema = z.enum([
+  "passed",
+  "failed",
+  "not runnable",
+]);
+export type VerificationOutcome = z.infer<typeof verificationOutcomeSchema>;
+
 export const verificationStepSchema = z
   .object({
     step: z.string().min(1),
-    outcome: z.enum(["passed", "failed", "not runnable"]),
+    outcome: verificationOutcomeSchema,
     detail: z.string().default(""),
   })
   .refine((step) => step.outcome === "passed" || step.detail.trim().length > 0, {

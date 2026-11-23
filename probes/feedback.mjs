@@ -183,6 +183,31 @@ check("D4 draft saved", await storeDraft(key, draft), { ok: true });
 const second = await readFeedbackState(key);
 check("D5 draft read back verbatim", second.draft, draft);
 
+// AU4. The slider's position is stored on the draft and must survive the round
+// trip through disk, where an optional key is the only shape that can: zod
+// strips an unknown key but rejects an unknown enum member, and a record whose
+// parse fails is dropped by `readInboxState` rather than repaired.
+{
+  const sliced = {
+    ...emptyDraft(),
+    comments: {
+      [anchorKey(findings[0])]: { include: true, text: "", sentences: 1 },
+      [anchorKey(findings[1])]: { include: false, text: "" },
+    },
+  };
+  check("AU4 a sliced draft saves", await storeDraft(key, sliced), {
+    ok: true,
+  });
+  const back = await readFeedbackState(key);
+  check("AU4 and reads back with the count intact", back.draft, sliced);
+  check(
+    "AU4 the switched off finding kept no count",
+    "sentences" in back.draft.comments[anchorKey(findings[1])],
+    false,
+  );
+  await storeDraft(key, draft);
+}
+
 const checked = await checkDraftAnchors(key);
 check("D6 unreadable diff reports rather than throws", checked.ok, false);
 console.log(`      reason: ${checked.error}`);

@@ -1,6 +1,6 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { highlight, success } from "./colour";
-import type { FindingState } from "./findings";
+import type { FindingState, VerificationOutcome } from "./findings";
 import { STAGE_LABELS, type DisplayStatus, type MapNode } from "./review";
 
 export interface NodeAppearance {
@@ -180,4 +180,80 @@ export function findingAppearance(
 export function findingWord(state: FindingState): string {
   if (state === "unknown") return "not matched";
   return state;
+}
+
+/**
+ * How a verification step went, in the same five fields the stage nodes use.
+ *
+ * `not runnable` exists because the screen used to draw it in the same neutral
+ * grey as `passed`, with its reason in the faintest text on the card. A run
+ * where six of seven steps were never attempted therefore read, at a glance,
+ * like a run that went fine. It gets a warning colour, a dashed border and a
+ * glyph of its own, so the one thing it must never look like is a pass.
+ *
+ * All three pairs differ in glyph, fill and border. `✓` and `!` are shared with
+ * `nodeAppearance` deliberately and mean the same two things there; the wizard
+ * draws no stage nodes, so the tables never appear together. AC-AV1.
+ */
+export function verificationAppearance(
+  outcome: VerificationOutcome,
+  theme: PluginTheme,
+): NodeAppearance {
+  const { colors } = theme;
+  switch (outcome) {
+    case "passed":
+      return {
+        glyph: "✓",
+        glyphColor: colors.accentForeground,
+        background: success(colors.statusSuccess),
+        borderColor: success(colors.statusSuccess),
+        borderStyle: "solid",
+      };
+    case "failed":
+      return {
+        glyph: "!",
+        glyphColor: colors.accentForeground,
+        background: colors.statusDanger,
+        borderColor: colors.statusDanger,
+        borderStyle: "solid",
+      };
+    /*
+     * Hollow and dashed, because nothing was run and nothing is known. The
+     * question mark is the claim: not that the step is fine, and not that it
+     * broke, but that it is unanswered.
+     */
+    default:
+      return {
+        glyph: "?",
+        glyphColor: colors.statusWarning,
+        background: "transparent",
+        borderColor: colors.statusWarning,
+        borderStyle: "dashed",
+      };
+  }
+}
+
+/**
+ * The verification list in one line, so the count of unattempted steps is
+ * readable before a single card is.
+ *
+ * Says nothing where everything passed: a run with no problem in it needs no
+ * summary of the problems.
+ */
+export function verificationSummary(
+  steps: readonly { outcome: VerificationOutcome }[],
+): string {
+  let failed = 0;
+  let blocked = 0;
+  for (const step of steps) {
+    if (step.outcome === "failed") failed++;
+    if (step.outcome === "not runnable") blocked++;
+  }
+  const total = `${steps.length} ${steps.length === 1 ? "step" : "steps"}`;
+  const parts: string[] = [];
+  if (failed > 0) parts.push(`${failed} failed`);
+  if (blocked > 0) parts.push(`${blocked} could not be run`);
+  return parts.length === 0
+    ? `${total}, all passed.`
+    : `${total}, ${parts.join(", ")}.`;
 }

@@ -1513,6 +1513,99 @@ not the workspace, and every surface that could imply otherwise says so instead.
       from here on is never marked and its press archives normally. Verified by
       probe, and by the live log line naming the 102 rows it kept.
 
+## AU. A finding is posted by the sentence
+
+The include switch had two positions: the whole finding or none of it. A finding
+is routinely a claim and then its evidence, and the claim alone is often all that
+is worth saying, so trimming one meant retyping the agent's words into the
+replacement box, which is the one thing that box exists to spare.
+
+The switch becomes a run of stops. The left stop posts nothing and is the old
+off; the right stop posts everything and is the old on; the stops between post
+the first one, two, three sentences. The proposal above the slider fades the part
+being left behind, so the setting is legible in the prose itself and not only
+under it.
+
+- [x] **AC-AU1** The count rides as an optional key on the draft comment, never
+      as a new enum member and never as a required field. `readInboxState` drops
+      a record whose `safeParse` fails, and zod strips an unknown key while
+      rejecting an unknown enum member, so an optional key is the only shape a
+      reader on an older copy of the shared schema survives. Absent means all of
+      it, which is what every draft already on disk means. `anchorKey` digests
+      the body, so a re-run that rewords a finding drops the count along with the
+      typed replacement: the right loss, because the count answered sentences
+      that are no longer on the screen. Verified by probe.
+- [x] **AC-AU2** The split holds on the shapes a finding is actually written in.
+      A decimal, a version number, an initial, an abbreviation, a file extension
+      and a `??` operator are not sentence boundaries; a blank line is one with
+      or without a terminator; a full stop inside a code span is never one. The
+      segments carry the whitespace between them and rejoin to the body
+      character for character, which is what lets the card draw the sent part and
+      the dropped part in two colours without redrawing the prose. Verified by
+      probe, and by running the splitter over all 251 finding bodies on disk with
+      every segment under 25 characters flagged for reading.
+- [x] **AC-AU3** What goes to GitHub is a prefix of what the agent wrote, never a
+      rejoin. The slice ends on a sentence boundary, never inside a code span,
+      and a count covering the whole finding returns the body itself rather than
+      a reconstruction of it. A typed replacement is sent whole whatever the
+      count says: those are the words James chose, and cutting them would be the
+      plugin editing him. Verified by probe.
+- [x] **AC-AU4** The slider is the control, and the switch survives where it is
+      the honest one. A finding of one sentence has nothing to slice, and a
+      finding with a replacement typed has two positions rather than N, so both
+      draw the old switch, the second saying that clearing the box restores the
+      sentence slider. The stored count is held through the off, so clearing a
+      replacement returns the slice set before it was typed. Every route writes
+      through one function, so the blocking-severity rule that unchecks approve
+      fires from the slider exactly as it did from the switch. Verified by probe.
+- [x] **AC-AU5** The last step counts what will actually be sent. A partly sent
+      finding reads `First N sentences of M` beside its path, and a finding sent
+      whole says nothing extra, so the line marks the exception rather than
+      decorating the rule. Verified by probe.
+- [ ] **AC-AU6** On the phone, a scroll begun on the slider scrolls the page and
+      does not move the stop. The stops are presses rather than a dragged thumb
+      for exactly that reason: a drag has to claim the responder on touch down,
+      and a `ScrollView` cancels a press the moment the finger travels. Every
+      stop is a press target of its own with its own label. Awaiting the app.
+
+## AV. The verification steps say why they could not be run
+
+Several records carry verification steps that were never attempted, and the
+screen drew them in the same neutral grey as a pass, with the reason in the
+faintest text on the card. A run where six of seven steps were never run
+therefore read, at a glance, like a run that went fine.
+
+The reason was never missing from the data: the schema already refuses a step
+that did not pass and says nothing, and the reasons on disk are specific. The
+defect was presentational, plus one real gap: a stage that failed or was skipped
+writes no file at all, and the empty list said only that no steps were recorded.
+
+- [x] **AC-AV1** A step that could not be run cannot look like a step that
+      passed. Three outcomes, three pairs, and every pair differs in at least
+      three of glyph, glyph colour, fill, border colour and border style.
+      `not runnable` is hollow, dashed and warning coloured, carrying a question
+      mark, which is the claim it makes: not that the step is fine, and not that
+      it broke, but that it is unanswered. The outcome word is drawn beside the
+      square, so neither colour nor shape is ever the only signal, and the list
+      is summarised above itself so the count of unattempted steps is readable
+      before a single card is. Verified by probe.
+- [x] **AC-AV2** The reason is named rather than merely shown. A step that did
+      not pass carries a heading, "Why it could not be run" or "What went wrong",
+      and its reason at full contrast behind a rule in the outcome's own colour.
+      An unlabelled paragraph under a step reads as more of the step, which is
+      what it did. A passing step keeps its detail muted and unheaded: it is
+      context, not an answer. Verified by probe for the data, awaiting the app
+      for the drawing.
+- [x] **AC-AV3** An empty list says which kind of empty it is. The verification
+      stage's own status and error reach the wizard, so a stage that was skipped,
+      that failed before recording anything, that is still running, or that never
+      ran, each say so in their own words, carrying the stage's error where there
+      is one. A stage that genuinely finished and recorded nothing says that, and
+      says it is worth distrusting. Verified by probe.
+- [ ] **AC-AV4** On a record whose verification could not be run, the feedback
+      screen names the reason without opening anything else: which steps were
+      never attempted, and why each one was not. Awaiting the app.
+
 ## Awaiting the app
 
 Every criterion below is built and typechecked. None can be ticked from here: each asserts
@@ -1577,6 +1670,8 @@ invocation command, so there is no route to them except the running app.
 | AC-AQ14                        | One Review again press on a record whose head has moved, read on the node and in the findings file              |
 | AC-AQ15                        | The wizard on that second round, read for the marks and the switches                                            |
 | AC-AS6                         | One look at a record carrying a launch failure, on the row and then on the detail                               |
+| AC-AU6                         | One scroll begun on the slider, on the phone, then one stop pressed                                             |
+| AC-AV2, AC-AV4                 | One feedback screen opened on a record whose verification could not run                                         |
 | AC-AT4, AC-AT7                 | One Dismiss press, then Paseo's own workspace list, then Restore                                                |
 
 ## Non-goals
