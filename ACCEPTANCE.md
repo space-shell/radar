@@ -131,7 +131,7 @@ settling `done` and noting `1 finding`.
 
 - [x] **AC-F1** Verification sends a prompt to the same existing agent, as in AC-E1. Verified by construction: it calls the same `askAgent`, which only ever reaches `agents.ref`. Confirmed 2026-10-15 against a stand-in SDK whose `create` threw on contact.
 - [ ] **AC-F2** The agent follows the manual verification steps from the PR description, in order. The brief requires each step copied close to verbatim and forbids dropping one, but only a real run shows whether the list matches the description.
-- [ ] **AC-F3** Browser work targets the Vercel preview URL parsed from the PR body, never a local dev server. The parser is verified: on 2026-10-15 it returned the right host for `#9462`, `#9457`, `#9470` and `#9414`, declined a body carrying only the Storybook preview, declined another pull request's preview, and declined `pr-94620` against `9462`. The prompt carries that URL, and says plainly not to start a dev server when there is none. What the browser is actually pointed at needs a real run.
+- [ ] **AC-F3** Browser work targets a Vercel preview parsed from the PR body, never a local dev server. Amended by AC-AW1: the parser returned only the `pr-<n>.` application host and declined every other build, which was the single largest cause of a step being recorded as not runnable, so it now returns all of them and the brief picks between them. What it still declines is verified by probe: another pull request's preview, `pr-101223` against `10122`, and a `vercel.com` link that is not a deployment. The prompt carries every preview, and says plainly not to start a dev server when there is none. What the browser is actually pointed at needs a real run.
 - [ ] **AC-F4** A step that is not runnable as written is recorded as such, with the reason, rather than skipped quietly. The reason is enforced on read, not asked for: verified 2026-10-15 that a `not runnable` step with a blank detail fails the stage with `a step that did not pass must say why`, and that an empty list fails with `expected array to have >=1 items`. Whether every step in the description reached the list can only be seen on a real run.
 - [x] **AC-F5** Verification results append to the same findings file, tagged with their stage, so Feedback can separate them from code findings per AC-G17. Verified 2026-10-15: the agent writes its own scratch file and the server merges, so it never holds the findings file open. Three steps merged alongside an existing code finding, both lists intact, the scratch file removed. Run in the other order, with no findings file in place, the merge created one with `findings: []`, and QA running afterwards carried the verification list across.
 - [x] **AC-F6** Verification is skippable on the same terms as AC-E8. Verified 2026-10-15: skipping each stage in turn moved the current node to the next one, QA to verification to feedback to dismiss.
@@ -1520,9 +1520,9 @@ is routinely a claim and then its evidence, and the claim alone is often all tha
 is worth saying, so trimming one meant retyping the agent's words into the
 replacement box, which is the one thing that box exists to spare.
 
-The switch becomes a run of stops. The left stop posts nothing and is the old
-off; the right stop posts everything and is the old on; the stops between post
-the first one, two, three sentences. The proposal above the slider fades the part
+The switch becomes a row of numbered stops. `None` posts nothing and is the old
+off; `All` posts everything and is the old on; the numbers between post the
+first one, two, three sentences. The proposal above the slider fades the part
 being left behind, so the setting is legible in the prose itself and not only
 under it.
 
@@ -1562,11 +1562,20 @@ under it.
       finding reads `First N sentences of M` beside its path, and a finding sent
       whole says nothing extra, so the line marks the exception rather than
       decorating the rule. Verified by probe.
-- [ ] **AC-AU6** On the phone, a scroll begun on the slider scrolls the page and
-      does not move the stop. The stops are presses rather than a dragged thumb
-      for exactly that reason: a drag has to claim the responder on touch down,
-      and a `ScrollView` cancels a press the moment the finger travels. Every
-      stop is a press target of its own with its own label. Awaiting the app.
+- [ ] **AC-AU6** On the phone, a press lands on the stop it was aimed at, and a
+      scroll begun on the slider scrolls the page rather than moving the stop.
+      The first drawing failed the first half of that: every press on a phone
+      went to one end or the other. Three things were wrong at once and the
+      numbered chips fix all three. The stops were `flex: 1`, so their width came
+      from the card and nothing guaranteed a thumb-sized target; a chip is a
+      fixed 38 points and wraps rather than shrinking. They carried no labels, so
+      between the two ends there was nothing to aim at; a chip says its own
+      number. And a finding is two sentences one time in five, measured across
+      256 on disk, where a run of stops genuinely has only its two ends and
+      looked broken for being what it is. They stay presses rather than a dragged
+      thumb for the second half: a drag has to claim the responder on touch down,
+      and a `ScrollView` cancels a press the moment the finger travels. Awaiting
+      the app.
 
 ## AV. The verification steps say why they could not be run
 
@@ -1605,6 +1614,59 @@ writes no file at all, and the empty list said only that no steps were recorded.
 - [ ] **AC-AV4** On a record whose verification could not be run, the feedback
       screen names the reason without opening anything else: which steps were
       never attempted, and why each one was not. Awaiting the app.
+
+## AW. A step is only unrunnable when nothing could run it
+
+Across 37 records, 53 verification steps read `not runnable` against 36 passed
+and 5 failed: 57% of every step ever attempted. Reading all 53, most were not
+honest refusals but the plugin's own doing.
+
+Twenty of them wanted a surface that was built and waiting. `server/preview.ts`
+returned the single `pr-<n>.` application host and discarded the rest, and brief
+rule 5 called that one URL "the only target", so a change to web-admin, to
+Storybook or behind the dev API was verified against a preview that does not
+serve it, and correctly refused. Six more got the line "none published on this
+pull request" when the body published one: #10153 built only
+`pr-10153-admin.acme.vercel.app`, and the agent said so itself, naming the CI
+run whose admin deploy had succeeded. Nine were destructive steps refused against
+a prod preview while a `(dev)` build of the same surface sat in the same table.
+A further twelve were refused only because an earlier step had been, eight hit
+browser tooling that timed out, and four wanted a command this machine could have
+run.
+
+- [x] **AC-AW1** Every preview the pull request published reaches the prompt,
+      named as the body names it, application first. The web app, the admin
+      build, the dev-API build and the Storybook builds are four different
+      answers to "where can this change be seen", and handing over one of them
+      while calling it the only target is what made the other three unrunnable.
+      Labels come from the bolded cell the bot writes beside each link, falling
+      back to the host's own suffix, so the agent can tell `(dev)` from `(prod)`
+      without parsing a hostname. A path now terminates at a quote, a bracket and
+      an angle bracket as well as whitespace, which fixes the two records whose
+      target was recorded as `/home">Web`. Verified by probe, and against the
+      live bodies of `#10122`, `#10153` and `#9916`: four previews, one, and four.
+- [ ] **AC-AW2** `not runnable` is the last rung of a ladder, not the first
+      answer. Before writing it the agent tries another preview, another route to
+      the same state, the repository's own command inside the development
+      environment, and what CI already ran on this head. The brief carries the
+      ladder in order and says to stop at the first rung that answers the step.
+      Needs a real run.
+- [ ] **AC-AW3** A step is never unrunnable merely because the step before it
+      was. The precondition is reached another way where one exists, and where
+      none does the detail names the step it depended on, so a chain of twelve
+      refusals cannot come from one. Needs a real run.
+- [ ] **AC-AW4** A destructive step runs against the `(dev)` preview rather than
+      being refused. Refusing it against `(prod)` was right, and refusing it at
+      all was not: the same surface was built against the dev backend and listed
+      in the same table. Where only a prod preview exists the read-only part
+      still runs and the write does not, and the detail says which. Needs a real
+      run.
+- [ ] **AC-AW5** A fault in the tooling here is never reported as a fault in the
+      pull request. A dead browser host is retried, then retried in a fresh tab,
+      and if it still fails the detail names the tooling and the error and says
+      the pull request was never reached. Every `not runnable` detail says which
+      of the two it is and what was tried, and `could not be tested` is named in
+      the brief as not an answer. Needs a real run.
 
 ## Awaiting the app
 
@@ -1671,6 +1733,7 @@ invocation command, so there is no route to them except the running app.
 | AC-AQ15                        | The wizard on that second round, read for the marks and the switches                                            |
 | AC-AS6                         | One look at a record carrying a launch failure, on the row and then on the detail                               |
 | AC-AU6                         | One scroll begun on the slider, on the phone, then one stop pressed                                             |
+| AC-AW2 through AC-AW5          | One verification run on a pull request publishing an admin or Storybook preview, read step by step              |
 | AC-AV2, AC-AV4                 | One feedback screen opened on a record whose verification could not run                                         |
 | AC-AT4, AC-AT7                 | One Dismiss press, then Paseo's own workspace list, then Restore                                                |
 

@@ -13,7 +13,7 @@ import { pullRequestBody } from "./github";
 import { briefPath } from "./briefs";
 import { keyUrl, note as ledger } from "./ledger";
 import { log } from "./log";
-import { previewUrl } from "./preview";
+import { previewLines, previews, type Preview } from "./preview";
 import { setupCommand, setupLines } from "./setup";
 import { runStage, type StageResult } from "./stages";
 import { loadState, updateState } from "./state";
@@ -23,7 +23,7 @@ function prompt(
   record: IntakeRecord,
   brief: string,
   output: string,
-  preview: string | null,
+  deployments: Preview[],
   setup: string | null,
 ): string {
   return [
@@ -32,9 +32,7 @@ function prompt(
     `Pull request: ${pullRequestUrl(record)}`,
     `Record key: ${record.key}`,
     `Write the result file to: ${output}`,
-    preview
-      ? `Preview deployment: ${preview}`
-      : "Preview deployment: none published on this pull request. Do not start a dev server.",
+    ...previewLines(deployments),
     ...setupLines(setup),
     "",
     "Post nothing to GitHub. The result file is the only output.",
@@ -76,7 +74,7 @@ export function runVerification(
       // than their last writes. AC-AG6.
       inFindingsLane(record.key, async () => {
         const body = await pullRequestBody(record.repo, record.number);
-        const preview = previewUrl(body, record.number);
+        const deployments = previews(body, record.number);
 
         const scratch = verificationPath(record.repo, record.number);
         await prepareArtifact(scratch);
@@ -88,7 +86,7 @@ export function runVerification(
           paseo,
           record,
           "verification",
-          prompt(record, brief, scratch, preview, await setupCommand()),
+          prompt(record, brief, scratch, deployments, await setupCommand()),
         );
 
         const file = await readVerification(scratch);

@@ -822,8 +822,7 @@ export function Wizard({
                 {sliceWord(sending, total)}
               </Text>
               <Text style={styles.muted}>
-                The faded text above is not sent. Nothing goes out at the left
-                stop.
+                The faded text above is not sent. None posts nothing at all.
               </Text>
             </View>
           ) : (
