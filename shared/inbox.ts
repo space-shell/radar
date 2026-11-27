@@ -96,6 +96,20 @@ export const intakeRecordSchema = z.object({
    * AC-Q4.
    */
   summaryError: z.string().optional(),
+  /**
+   * What the first summary's verification decision did, written once so it is
+   * never done twice. A push, a re-summary and a reopen all leave it alone,
+   * which is what stops an automatic run being repeated. `actedAt` is absent
+   * only on a run that is decided and still waiting for a handle to send its
+   * turn. AC-AY2.
+   */
+  autoVerification: z
+    .object({
+      decidedAt: z.string(),
+      required: z.boolean(),
+      actedAt: z.string().optional(),
+    })
+    .optional(),
   /** The feedback wizard's draft, and the review once it has gone out. Group G. */
   feedback: feedbackSchema.optional(),
   /** What GitHub says about the pull request. Absent until the first sweep. AC-M1. */

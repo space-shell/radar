@@ -107,6 +107,14 @@ export const radarSettings = defineSettings({
      */
     previewHosts: z.array(z.string().min(1)).default([]),
     /**
+     * Acts on the summary's verification decision when a record's first summary
+     * lands: queues the stage when the summary says it is required, skips it when
+     * it says it is not. Once per record, never again on a push or a re-summary.
+     * Off by default, because a verification turn can drive a browser for a
+     * quarter of an hour.
+     */
+    autoVerify: z.boolean().default(false),
+    /**
      * The Linear workspace slug, and the team keys worth linking. A body naming
      * `ENG-1234` only becomes a link when `ENG` is listed here, so an unrelated
      * capitalised word cannot turn into a dead issue link.
