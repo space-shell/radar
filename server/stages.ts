@@ -395,9 +395,10 @@ async function markStarted(key: string, stage: ReviewStage): Promise<void> {
  * other press for the length of that call. R2.
  *
  * Reachable from an RPC handler, which is reachable only from a press, and from
- * `startDecidedVerifications`, which reaches only `runVerification`. That stage
- * has no `onClaim` and its turn is told to post nothing, so every GitHub write
- * this function can make is still behind a press. AC-I2, AC-AY4.
+ * `startDecidedStages`, which reaches only `runVerification` and `runQa` with
+ * `automatic` set. Neither of those carries an `onClaim`, and both turns are told
+ * to post nothing, so every GitHub write this function can make is still behind
+ * a press. AC-I2, AC-AY4, AC-AZ3.
  */
 export async function runStage(
   key: string,
@@ -465,6 +466,19 @@ export async function runStage(
   const withWarning = (result: StageResult): StageResult =>
     warning ? { ...result, warning } : result;
 
+  /*
+   * Resolved once the press holds its place: in its agent's lane, or started.
+   * A background caller returns on it rather than on the claim, because the gate
+   * reads the settings before the lane is joined, and two presses made one after
+   * the other must join in that order however long each read takes. Press order
+   * is the lane's whole fairness rule, and the automatic sweep leans on it to put
+   * QA ahead of verification. AC-AF2, AC-AZ4.
+   */
+  let placed = (): void => undefined;
+  const inPlace = new Promise<void>((resolve) => {
+    placed = resolve;
+  });
+
   const perform = async (): Promise<StageResult> => {
     let failure: string | null = null;
     let cancelled = false;
@@ -484,13 +498,17 @@ export async function runStage(
 
       try {
         const gate = options.gate ? await options.gate(claimed) : null;
-        note =
-          (await (gate?.agentId
-            ? inLane(gate.agentId, gate.ready, begin, token.controller.signal)
-            : begin())) || undefined;
+        const running = gate?.agentId
+          ? inLane(gate.agentId, gate.ready, begin, token.controller.signal)
+          : begin();
+        placed();
+        note = (await running) || undefined;
       } catch (error) {
         if (!token.started && isLaneCancelled(error)) cancelled = true;
         else failure = error instanceof Error ? error.message : String(error);
+      } finally {
+        // A gate that threw never reached the lane, and its caller still goes.
+        placed();
       }
 
       await updateState((state) => {
@@ -559,5 +577,6 @@ export async function runStage(
   void perform().catch((error: unknown) => {
     log(`${key} stage ${stage} could not be settled: ${String(error)}`);
   });
+  await inPlace;
   return withWarning({ ok: true });
 }
