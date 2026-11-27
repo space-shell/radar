@@ -51,7 +51,12 @@ Judge each step as written, not as you would have written it:
 - `failed`: the step was carried out and the stated outcome did not happen. `detail` says
   what happened instead.
 - `not runnable`: the step could not be carried out as written, and the ladder below ran
-  out. `detail` says what was tried and what stopped it.
+  out. `detail` says what was tried and what stopped it. A step that needs a credential
+  you were not given, an account that is not in the preview, data that exists only in
+  production, a destructive action with no `(dev)` preview to carry it, or any database
+  that is not on localhost belongs here, as does a step whose instructions are ambiguous
+  enough that two readings would test different things. No rung of the ladder changes
+  that.
 
 Never silently drop a step, and never mark one `passed` because it probably would. A file
 with fewer entries than the description has steps is wrong.
@@ -62,7 +67,9 @@ detail says so. That is a real finding about the pull request, and James reads i
 
 ## Before writing `not runnable`
 
-Work down this ladder. Stop at the first rung that answers the step. AC-AW2.
+Work down this ladder. Stop at the first rung that answers the step. The ladder works
+inside the hard rules above and never around them: a rung that would break one is not
+available, and the next rung is tried instead. AC-AW2.
 
 1. **A different preview.** Rule 5. Most steps that look targetless are pointed at the
    wrong build. Check every preview the prompt lists before concluding none serves it.
@@ -72,12 +79,23 @@ Work down this ladder. Stop at the first rung that answers the step. AC-AW2.
    entry point into the same screen. Only when that fails does it become `not runnable`,
    and the detail then names the step it depended on. Never mark a step `not runnable`
    solely because an earlier one was. AC-AW3.
-3. **The repository's own commands.** A step about tests, types, lint, a build, a
-   migration or a script is not a browser step. Enter the development environment named
-   in the prompt and run the repository's own command for it. Missing dependencies are a
-   rung, not a wall: install them with the package manager the repository already uses,
-   and never with a flag that bypasses the repository's install policy. A command that
-   runs and reports is `passed` or `failed`, not `not runnable`.
+3. **The repository's own commands.** A step about tests, types, lint or a build is not
+   a browser step. Enter the development environment named in the prompt and run the
+   repository's own command for it, within rule 4:
+   - Only when its dependencies are already installed. Never install them here: an
+     install writes into the worktree and runs the pull request's own install scripts.
+     A missing dependency sends the step to rung 4, not to an install.
+   - Only in a form that writes to no tracked file: lint without its fix flag, a type
+     check that emits nothing. Read `git status --porcelain` in the worktree before and
+     after. If the command changed anything, say so in the detail and leave it as found;
+     do not try to repair it.
+   - A migration, a seed or any script that connects to a database runs only after its
+     own configuration shows the host is localhost. Rule 8. When the target cannot be
+     shown to be local, the step is `not runnable` and the detail says the database
+     target could not be confirmed as local.
+
+   A command that runs and reports is `passed` or `failed`, not `not runnable`.
+
 4. **What CI already ran.** When the same command runs in CI on this pull request, read
    its result rather than guessing: `gh run list` and `gh run view --log` on the head
    commit. This is the command actually having run, not a prediction, so it settles the

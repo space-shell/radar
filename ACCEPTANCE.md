@@ -1650,7 +1650,8 @@ run.
       the same state, the repository's own command inside the development
       environment, and what CI already ran on this head. The brief carries the
       ladder in order and says to stop at the first rung that answers the step.
-      Needs a real run.
+      Amended by AC-AW7: the ladder works inside the hard rules, never around
+      them. Needs a real run.
 - [ ] **AC-AW3** A step is never unrunnable merely because the step before it
       was. The precondition is reached another way where one exists, and where
       none does the detail names the step it depended on, so a chain of twelve
@@ -1679,6 +1680,19 @@ run.
       leading digit (`3D Viewer`, not `D Viewer`), and a label never crosses a
       table row. Verified by probe: six of the new checks fail against the
       previous parser and pass against this one.
+- [x] **AC-AW7** The ladder never outranks a hard rule. Its third rung told the
+      agent to install missing dependencies, inside a worktree rule 4 forbids it
+      to write to, and to run migrations and scripts with nothing tying them to
+      rule 8. It now runs a repository command only when the dependencies are
+      already installed, only in a form that writes no tracked file, with
+      `git status --porcelain` read before and after, and a database script only
+      once its own configuration shows a localhost target. A missing dependency
+      goes to the CI rung, not to an install. The sentence sending a credential,
+      production-only data, a destructive step with no `(dev)` preview and any
+      non-localhost database to `not runnable`, dropped when the ladder went in,
+      is back. Verified by probe against the brief's text: six checks fail
+      against the previous brief. Whether an agent obeys it needs a real run,
+      under AC-E4.
 
 ## AX. A badge that is always on is not a badge
 
