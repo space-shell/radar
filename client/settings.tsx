@@ -210,6 +210,15 @@ function TaskSection({
   return (
     <SettingsSection title={TASK_LABELS[task]}>
       <SettingsRow label="What it does" hint={TASK_NOTES[task]} />
+      {task === "qa" ? (
+        // Beside the task it starts, as verification's is. AC-AZ5.
+        <SettingsSwitch
+          label="Run automatically"
+          hint="When a pull request's first summary lands, QA is queued without the eyes reaction, which only a press adds. Once per pull request: a push or a new summary never starts another."
+          value={draft.autoQa}
+          onValueChange={(autoQa) => onChange({ ...draft, autoQa })}
+        />
+      ) : null}
       {task === "verification" ? (
         // Here rather than under Intake, beside the task it starts and the
         // model it will spend. AC-AY7.
