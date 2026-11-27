@@ -183,7 +183,7 @@ the stage and left the existing findings file exactly as QA wrote it.
 ## I. Guardrails
 
 - [x] **AC-I1** No stage contacts a human on Slack, in Linear, or by email. GitHub review mechanics are the only outward channel. Verified by construction: the plugin holds no Slack client, no mail client and no Linear write path. `server/reactions.ts` is the only outward write in the codebase, and it writes one reaction.
-- [x] **AC-I2** Every GitHub write follows a press by James in an attended session. No scheduled or background path can post. Verified by construction: `runStage` is reachable only from the `radar.stage.run` handler, and `removeEyes` only from `dismissRecord` and the feedback submit. No interval, tick or reconciler calls it, and the pollers hold no reference to `reactions.ts`.
+- [x] **AC-I2** Every GitHub write follows a press by James in an attended session. No scheduled or background path can post. Verified by construction: `runStage` is reachable only from the `radar.stage.run` handler, and `removeEyes` only from `dismissRecord` and the feedback submit. No interval, tick or reconciler calls it, and the pollers hold no reference to `reactions.ts`. The one path that starts a stage without a press, automatic verification (AC-AY4), reaches only `runVerification`, which has no `onClaim` and whose turn is told to post nothing, so it writes nothing to GitHub.
 - [x] **AC-I3** Nothing merges a PR, marks a draft ready, closes a Linear issue, commits, or pushes. Verified 2026-10-15: a search for merge, ready-for-review, close, commit and push calls across the plugin returns only `server/reap.ts` reading a PR's `MERGED` state.
 - [x] **AC-I4** No output anywhere contains an em dash. Verified 2026-10-15: a search for the character across the plugin, briefs included, returns nothing.
 - [x] **AC-I5** No credential is logged, including the GitHub token and the Linear key. Verified 2026-10-15: no `log()` call takes a token, and the token reaches exactly two places, the `Authorization` header in `server/github.ts` and the one in `server/reactions.ts`.
@@ -1718,6 +1718,46 @@ run.
       reason and the Forget control are all unchanged and still appear the
       moment a stored record fails `safeParse`. AC-R10 and AC-AR9 stand.
 
+## AY. Verification follows the summary's decision, once
+
+- [x] **AC-AY1** With `autoVerify` on, a record's first summary decides
+      verification on its own: `required: true` queues the stage, and
+      `required: false` skips it with the note `not required, per the summary`.
+      The decision is taken in the same `updateState` that stores the summary,
+      so no reader sees one without the other. Verified by probe: the rule as a
+      fourteen row table, and the store reached through `collectSummaries`.
+- [x] **AC-AY2** It acts once per record and never again. Only the first
+      summary decides, which is what keeps a push or a Summarise press from
+      buying a second browser session, and the `autoVerification` marker is the
+      second lock: a record that was ever decided is not decided again whatever
+      later clears or replaces its summary. Turning the switch on decides
+      nothing about records that already have a summary, so there is no
+      backfill. Verified by probe: a re-summary stores and decides nothing.
+- [x] **AC-AY3** It never overrides James. A verification stage that has been
+      pressed, queued, run, skipped or reopened is left alone, as is a record
+      dismissed, failed or without an agent. A summary with no verification
+      decision leaves the stage a press. Verified by probe.
+- [x] **AC-AY4** A run goes through `runVerification`, the press's own path: it
+      queues behind a busy agent, shows as queued on the map with Cancel, and
+      carries no `onClaim`. QA is never started automatically. A decision that
+      no longer applies by the time it is sent, because the record was dismissed
+      or verified by hand, is spent rather than kept. Verified by probe, and by
+      construction: `server/auto-verify.ts` names no stage runner other than
+      `runVerification` and nothing that posts.
+- [x] **AC-AY5** A run needs a Paseo handle, and the floor pass after a restart
+      has none. The decision then waits on its marker, with no `actedAt`, and
+      the next hook or Summarise press sends it. The settle pass uses the handle
+      the last hook carried; the summary press sends after its lane is released,
+      because verification queues on the same agent. Verified by probe: the
+      sweep sends a decided run once and a second sweep sends nothing.
+- [x] **AC-AY6** The plugin log says at start whether automatic verification is
+      on, and whether that was read from the settings document or `config.json`.
+- [ ] **AC-AY7** The Verification section of Settings carries a switch,
+      `Run automatically`, off by default. Awaiting the app.
+- [ ] **AC-AY8** The next review request whose summary says verification is
+      required shows Verification queued without a press, and one whose
+      summary says it is not shows it skipped with the note. Awaiting the app.
+
 ## Awaiting the app
 
 Every criterion below is built and typechecked. None can be ticked from here: each asserts
@@ -1739,7 +1779,7 @@ invocation command, so there is no route to them except the running app.
 | AC-AR5                         | One wizard opened on a record whose QA is done and whose findings file has gone                                 |
 | AC-AR6                         | One threads screen opened while GitHub refuses the read                                                         |
 | AC-AG9                         | Two presses made during one open turn, QA then verification                                                     |
-| AC-AH6, AC-AH7                 | One walk through a record whose findings share a line, typing in the box at each step                           |
+| AC-AH6 to AC-AH8               | One walk through a record whose findings share a line, typing in the box at each step                           |
 | AC-AE11                        | One `paseo agent kill` on an agent with a stage running                                                         |
 | AC-A2, AC-A3, AC-A4            | One Retry press on an `orphaned` or `failed` record                                                             |
 | AC-A7, AC-A9                   | One Dismiss press, then Restore                                                                                 |
@@ -1786,6 +1826,8 @@ invocation command, so there is no route to them except the running app.
 | AC-AW2 through AC-AW5          | One verification run on a pull request publishing an admin or Storybook preview, read step by step              |
 | AC-AV2, AC-AV4                 | One feedback screen opened on a record whose verification could not run                                         |
 | AC-AT4, AC-AT7                 | One Dismiss press, then Paseo's own workspace list, then Restore                                                |
+| AC-AY7                         | One open of Settings, Radar, read for the switch in the Verification section                                    |
+| AC-AY8                         | The next two review requests to arrive, one summarised as needing verification and one not                      |
 
 ## Non-goals
 
