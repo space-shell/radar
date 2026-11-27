@@ -225,6 +225,23 @@ function styleSheet(theme: PluginTheme, compact: boolean) {
     },
     nav: { color: highlight(colors.accent), fontSize: 13 },
     navOff: { color: colors.foregroundMuted, fontSize: 13, opacity: 0.4 },
+    // Next is the press a walk through the findings is made of, so it is a box
+    // a thumb can find rather than a word: 44 points tall, the smallest touch
+    // target either platform's guidelines name. Outlined, not filled, because
+    // the fill belongs to submit alone. The disabled box keeps its size so the
+    // footer does not shift on the last step. AC-AA1, AC-AH8.
+    next: {
+      ...button,
+      minHeight: 44,
+      justifyContent: "center" as const,
+      borderColor: highlight(colors.accent),
+    },
+    nextOff: {
+      ...button,
+      minHeight: 44,
+      justifyContent: "center" as const,
+      borderColor: colors.border,
+    },
     counter: { color: colors.foregroundMuted, fontSize: 12 },
     link: { color: highlight(colors.accent), fontSize: 13 },
   };
@@ -1195,8 +1212,10 @@ export function Wizard({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Next step"
+          accessibilityState={{ disabled: last }}
           disabled={last}
           onPress={() => go({ type: "NEXT" })}
+          style={last ? styles.nextOff : styles.next}
         >
           <Text style={last ? styles.navOff : styles.nav}>Next →</Text>
         </Pressable>

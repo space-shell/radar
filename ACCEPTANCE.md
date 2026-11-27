@@ -843,6 +843,7 @@ two proposals at one line are two findings.
 - [x] **AC-AH5** `anchorLabel` still reads a key back as `path:line`, including a path carrying colons of its own, and still returns a key it cannot parse unchanged. Verified by probe.
 - [ ] **AC-AH6** Typing into the replacement box on one finding and pressing Next shows an empty box on the next. The field is uncontrolled by design, so what settles it is the remount, and that is a DOM fact no probe can reach. Awaiting the app.
 - [ ] **AC-AH7** The footer label slot holds the width of the widest label it can ever show, so moving between a finding and the preview does not slide the Next arrow sideways. Awaiting the app.
+- [ ] **AC-AH8** Next is an outlined button at least 44 points tall, not a bare word, so a thumb lands on it on a phone. It is not filled, because the fill is reserved for submit (AC-AA1), and on the last step it keeps its box and dims rather than shrinking. Awaiting the app.
 
 ## AI. The strip draws the work, not the disposal
 
