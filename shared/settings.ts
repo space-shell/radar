@@ -115,6 +115,14 @@ export const radarSettings = defineSettings({
      */
     autoVerify: z.boolean().default(false),
     /**
+     * Queues QA when a record's first summary lands, without the eyes reaction:
+     * the reaction tells the author that someone has picked the pull request up,
+     * and an automatic run is nobody. Once per record, never again on a push or a
+     * re-summary. Off by default, because it spends a QA turn on every pull
+     * request that arrives.
+     */
+    autoQa: z.boolean().default(false),
+    /**
      * The Linear workspace slug, and the team keys worth linking. A body naming
      * `ENG-1234` only becomes a link when `ENG` is listed here, so an unrelated
      * capitalised word cannot turn into a dead issue link.

@@ -142,6 +142,11 @@ function prompt(
   ].join("\n");
 }
 
+export interface QaOptions {
+  /** Started by the first summary rather than by a press. AC-AZ3. */
+  automatic?: boolean;
+}
+
 /**
  * Reviews the code and leaves the result in a file. Nothing is posted anywhere
  * about the code: what James says on the pull request is decided in the feedback
@@ -153,8 +158,16 @@ function prompt(
  * claim rather than on the turn so that a queued press marks the pull request
  * now: the lane can hold a press for an hour, and an author watching for a
  * signal should not have to wait out an agent they cannot see. AC-D1.
+ *
+ * A press only. A run the first summary starts adds nothing, because the
+ * reaction says a person has picked the pull request up and nobody has. A later
+ * press on the same record adds it as any press does. AC-AZ3.
  */
-export function runQa(key: string, paseo: Paseo): Promise<StageResult> {
+export function runQa(
+  key: string,
+  paseo: Paseo,
+  options: QaOptions = {},
+): Promise<StageResult> {
   return runStage(
     key,
     "qa",
@@ -209,12 +222,14 @@ export function runQa(key: string, paseo: Paseo): Promise<StageResult> {
       background: true,
       // Named here rather than in `addEyes`, because the sentence this becomes is
       // the press's, not the reaction's: the toast reads "QA started, but ...".
-      onClaim: (record) =>
-        addEyes(record.repo, record.number).catch((error: unknown) => {
-          throw new Error(
-            `the eyes reaction could not be posted: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }),
+      onClaim: options.automatic
+        ? undefined
+        : (record) =>
+            addEyes(record.repo, record.number).catch((error: unknown) => {
+              throw new Error(
+                `the eyes reaction could not be posted: ${error instanceof Error ? error.message : String(error)}`,
+              );
+            }),
       gate: (record) => gateFor(paseo, record, "qa"),
     },
   );

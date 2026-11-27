@@ -110,6 +110,15 @@ export const intakeRecordSchema = z.object({
       actedAt: z.string().optional(),
     })
     .optional(),
+  /**
+   * The first summary's automatic QA, written once for the same reason as the
+   * verification marker above: a push, a re-summary and a reopen all leave it
+   * alone. `actedAt` is absent only while the run waits for a handle to send its
+   * turn. AC-AZ2.
+   */
+  automaticQa: z
+    .object({ decidedAt: z.string(), actedAt: z.string().optional() })
+    .optional(),
   /** The feedback wizard's draft, and the review once it has gone out. Group G. */
   feedback: feedbackSchema.optional(),
   /** What GitHub says about the pull request. Absent until the first sweep. AC-M1. */
