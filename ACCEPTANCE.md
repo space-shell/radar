@@ -1667,6 +1667,18 @@ run.
       the pull request was never reached. Every `not runnable` detail says which
       of the two it is and what was tried, and `could not be tested` is named in
       the brief as not an answer. Needs a real run.
+- [x] **AC-AW6** A URL from the pull request body never sends the browser to a
+      host other than the preview it names. The body is editable by anyone who
+      can edit the pull request, and the browser it steers is signed into real
+      accounts. The host must end where `.vercel.app` ends, so userinfo
+      (`.vercel.app@evil.example`), a continued domain (`.vercel.app.evil.example`)
+      and a port are all refused; a path must open with `/`, `?` or `#`; and every
+      URL that leaves the parser is re-parsed and dropped unless its hostname is
+      exactly the host that matched, over https, with no credentials or port.
+      Trailing sentence punctuation is no longer part of a URL, a label keeps a
+      leading digit (`3D Viewer`, not `D Viewer`), and a label never crosses a
+      table row. Verified by probe: six of the new checks fail against the
+      previous parser and pass against this one.
 
 ## AX. A badge that is always on is not a badge
 

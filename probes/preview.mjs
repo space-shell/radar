@@ -11,8 +11,8 @@ const check = (name, got, want) => {
 };
 
 /**
- * The deployment table the bot maintains, trimmed from the live body of
- * acme/web#10122 and kept byte faithful in the parts that matter: the bolded
+ * The deployment table the bot maintains, trimmed from a live pull request body and
+ * kept byte faithful in the parts that matter: the bolded
  * first cell, the `href="` the path runs into, and the `vercel.com` build link in the
  * third cell, which is a vercel URL that is not a preview.
  */
@@ -23,12 +23,12 @@ const row = (name, url, project) =>
 const TABLE = [
   "## Deployments",
   "<table><tbody>",
-  row("🖥️ Web App (prod)", "https://pr-10122.acme.vercel.app/home", "web"),
-  row("🔧 Admin (prod)", "https://pr-10122-admin.acme.vercel.app", "admin"),
-  row("🖥️ Web App (dev)", "https://pr-10122-api.acme.vercel.app/home", "web"),
+  row("🖥️ Web App (prod)", "https://pr-812.acme.vercel.app/home", "web"),
+  row("🔧 Admin (prod)", "https://pr-812-admin.acme.vercel.app", "admin"),
+  row("🖥️ Web App (dev)", "https://pr-812-api.acme.vercel.app/home", "web"),
   row(
     "📖 Web Storybook",
-    "https://pr-10122-web-storybook.acme.vercel.app",
+    "https://pr-812-web-storybook.acme.vercel.app",
     "storybook",
   ),
   "</tbody></table>",
@@ -37,27 +37,27 @@ const TABLE = [
 // AW1: every published preview, not just the application, and named as the body names it.
 check(
   "AW1 every preview is returned, labelled, application first",
-  previews(TABLE, 10122),
+  previews(TABLE, 812),
   [
-    { label: "Web App (prod)", url: "https://pr-10122.acme.vercel.app/home" },
-    { label: "Admin (prod)", url: "https://pr-10122-admin.acme.vercel.app" },
+    { label: "Web App (prod)", url: "https://pr-812.acme.vercel.app/home" },
+    { label: "Admin (prod)", url: "https://pr-812-admin.acme.vercel.app" },
     {
       label: "Web App (dev)",
-      url: "https://pr-10122-api.acme.vercel.app/home",
+      url: "https://pr-812-api.acme.vercel.app/home",
     },
     {
       label: "Web Storybook",
-      url: "https://pr-10122-web-storybook.acme.vercel.app",
+      url: "https://pr-812-web-storybook.acme.vercel.app",
     },
   ],
 );
 
-// AW2: #10153 published only an admin build, and the stage was told there was none.
+// AW2: one pull request published only an admin build, and the stage was told there was none.
 const ADMIN_ONLY = [
   "<table><tbody>",
   row(
     "🔧 Admin (prod)",
-    "https://pr-10153-admin.acme.vercel.app/customers/1",
+    "https://pr-853-admin.acme.vercel.app/customers/1",
     "admin",
   ),
   "</tbody></table>",
@@ -65,11 +65,11 @@ const ADMIN_ONLY = [
 
 check(
   "AW2 a pull request with no application build still has its previews",
-  previews(ADMIN_ONLY, 10153),
+  previews(ADMIN_ONLY, 853),
   [
     {
       label: "Admin (prod)",
-      url: "https://pr-10153-admin.acme.vercel.app/customers/1",
+      url: "https://pr-853-admin.acme.vercel.app/customers/1",
     },
   ],
 );
@@ -79,10 +79,10 @@ check(
 check(
   "AW3 the path terminates at the closing quote of the href",
   previews(
-    row("🖥️ Web App (prod)", "https://pr-9916.acme.vercel.app/home", "web"),
-    9916,
+    row("🖥️ Web App (prod)", "https://pr-716.acme.vercel.app/home", "web"),
+    716,
   ).map((preview) => preview.url),
-  ["https://pr-9916.acme.vercel.app/home"],
+  ["https://pr-716.acme.vercel.app/home"],
 );
 
 check(
@@ -98,25 +98,25 @@ check(
 // survive with a label that says which it is.
 check(
   "AW4 the dev build keeps the label that distinguishes it from prod",
-  previews(TABLE, 10122)
+  previews(TABLE, 812)
     .filter((preview) => preview.label.includes("(dev)"))
     .map((preview) => preview.url),
-  ["https://pr-10122-api.acme.vercel.app/home"],
+  ["https://pr-812-api.acme.vercel.app/home"],
 );
 
 // AW5: another pull request's deployment is not this one's, and a longer number that
 // merely starts with ours is a different pull request.
 const NEIGHBOURS = [
-  "https://pr-999.acme.vercel.app/home",
-  "https://pr-1012.acme.vercel.app/home",
-  "https://pr-101223.acme.vercel.app/home",
-  "https://pr-10122.acme.vercel.app/home",
+  "https://pr-99.acme.vercel.app/home",
+  "https://pr-81.acme.vercel.app/home",
+  "https://pr-8123.acme.vercel.app/home",
+  "https://pr-812.acme.vercel.app/home",
 ].join("\n");
 
 check(
   "AW5 only this pull request's hosts are returned",
-  previews(NEIGHBOURS, 10122).map((preview) => preview.url),
-  ["https://pr-10122.acme.vercel.app/home"],
+  previews(NEIGHBOURS, 812).map((preview) => preview.url),
+  ["https://pr-812.acme.vercel.app/home"],
 );
 
 check(
@@ -165,7 +165,7 @@ check(
   ],
 );
 
-const lines = previewLines(previews(TABLE, 10122));
+const lines = previewLines(previews(TABLE, 812));
 check(
   "AW8 every preview reaches the prompt with its label",
   lines.filter((line) => line.startsWith("  ")).length,
@@ -180,6 +180,87 @@ check(
   "AW8 the prompt no longer claims there is no preview when there is one",
   lines.some((line) => line.includes("none published")),
   false,
+);
+
+// AW9: whoever edits a pull request body chooses what this reads, and the URL it
+// returns is where a browser signed into real accounts goes. Nothing that a URL
+// parser would send to another host may come back.
+const hostOf = (list) => list.map((preview) => new URL(preview.url).hostname);
+
+check(
+  "AW9 userinfo after the vercel host is not a preview",
+  previews("https://pr-5.acme.vercel.app@evil.example/home", 5),
+  [],
+);
+check(
+  "AW9 a vercel host continued into another domain is not a preview",
+  previews("https://pr-5.acme.vercel.app.evil.example/home", 5),
+  [],
+);
+check(
+  "AW9 a port on the host is not a preview",
+  previews("https://pr-5.acme.vercel.app:8443/home", 5),
+  [],
+);
+check(
+  "AW9 a backslash cannot carry the path onto another host",
+  hostOf(previews("https://pr-5.acme.vercel.app/home\\@evil.example", 5)),
+  ["pr-5.acme.vercel.app"],
+);
+check(
+  "AW9 credentials in front of the vercel host are not a preview",
+  previews("https://evil.example@pr-5.acme.vercel.app/home", 5),
+  [],
+);
+check(
+  "AW9 every returned URL parses to the host that matched",
+  hostOf(previews(TABLE, 812)),
+  [
+    "pr-812.acme.vercel.app",
+    "pr-812-admin.acme.vercel.app",
+    "pr-812-api.acme.vercel.app",
+    "pr-812-web-storybook.acme.vercel.app",
+  ],
+);
+
+// AW10: a URL written in prose ends at the prose, not at the punctuation after it.
+check(
+  "AW10 trailing sentence punctuation is not part of the URL",
+  previews(
+    "Try https://pr-5.acme.vercel.app/home, then https://pr-5-admin.acme.vercel.app. " +
+      "Or https://pr-5-api.acme.vercel.app/x?y=1; and https://pr-5-docs.acme.vercel.app:",
+    5,
+  ).map((preview) => preview.url),
+  [
+    "https://pr-5.acme.vercel.app/home",
+    "https://pr-5-admin.acme.vercel.app",
+    "https://pr-5-api.acme.vercel.app/x?y=1",
+    "https://pr-5-docs.acme.vercel.app",
+  ],
+);
+
+// AW11: a name that starts with a digit keeps it.
+check(
+  "AW11 a label starting with a digit keeps the digit",
+  previews(
+    row("🧊 3D Viewer", "https://pr-5-viewer.acme.vercel.app", "viewer"),
+    5,
+  ),
+  [{ label: "3D Viewer", url: "https://pr-5-viewer.acme.vercel.app" }],
+);
+
+// AW12: a row with no bolded cell is named off its host, not after the row above.
+check(
+  "AW12 a label never crosses into another table row",
+  previews(
+    row("🖥️ Web App (prod)", "https://pr-5.acme.vercel.app", "web") +
+      '<tr><td></td><td><a href="https://pr-5-admin.acme.vercel.app">x</a></td></tr>',
+    5,
+  ),
+  [
+    { label: "Web App (prod)", url: "https://pr-5.acme.vercel.app" },
+    { label: "admin", url: "https://pr-5-admin.acme.vercel.app" },
+  ],
 );
 
 console.log(failures === 0 ? "\nall pass" : `\n${failures} FAILED`);

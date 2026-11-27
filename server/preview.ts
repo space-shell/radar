@@ -5,12 +5,28 @@
  * URL arrives inside `href="..."` and the path runs straight into `">Web App (prod)
  * preview</a>`. A path that stopped only at whitespace swallowed that, and two runs
  * recorded the target as malformed and gave up on it.
+ *
+ * The host has to end where `.vercel.app` ends. Anyone who can edit a pull request
+ * body chooses what this reads, and the result is where a browser signed into real
+ * accounts is sent. Without the boundary, `https://pr-5.acme.vercel.app@evil.example`
+ * matched as a vercel host with the path `@evil.example`, and a URL parser reads that
+ * as userinfo followed by the host `evil.example`; `.vercel.app.evil.example` was the
+ * same trick with a dot. The lookahead admits only what can follow a host: a path, a
+ * query, a fragment, a terminator, or a full stop or colon that is not itself the start
+ * of more host. A path then has to open with `/`, `?` or `#`, so nothing else can be
+ * glued onto the host either.
  */
 const VERCEL_URL =
-  /https:\/\/([a-z0-9][a-z0-9.-]*\.vercel\.app)([^\s"'`<>)\]]*)?/gi;
+  /https:\/\/([a-z0-9][a-z0-9.-]*\.vercel\.app)(?=[/?#\s"'`<>)\],;!]|[.:](?![a-z0-9-])|$)([/?#][^\s"'`<>)\]\\]*)?/gi;
+
+/** Sentence punctuation a URL written in prose ends with, which is not part of it. */
+const TRAILING = /[.,;:!?]+$/;
 
 /** The bolded first cell of a table row, which is what the bot names a preview. */
 const LABEL = /<b>([^<]+)<\/b>/gi;
+
+/** A table row opening or closing. A label on the other side of one names another row. */
+const ROW_EDGE = /<\/?tr[\s>]/i;
 
 /** A label further away than this belongs to something else on the page. */
 const LABEL_REACH = 240;
@@ -21,16 +37,47 @@ export interface Preview {
   url: string;
 }
 
-/** Drops the emoji and the padding the bot puts in front of a cell's name. */
+/**
+ * Drops the emoji and the padding the bot puts in front of a cell's name.
+ *
+ * Digits stay. `3D Viewer` is a name, and stripping everything up to the first letter
+ * recorded it as `D Viewer`.
+ */
 function tidy(label: string): string {
-  return label.replace(/^[^\p{L}(]+/u, "").trim();
+  return label.replace(/^[^\p{L}\p{N}(]+/u, "").trim();
+}
+
+/**
+ * The URL as a browser would read it, or null when that is not this host.
+ *
+ * The regex is the gate and this is the check behind it: whatever the pattern lets
+ * through, the URL that leaves this module parses to exactly the host that matched,
+ * over https, on the default port, with no credentials in front of it.
+ */
+function confirmed(host: string, path: string): string | null {
+  const url = `https://${host}${path}`;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:") return null;
+    if (parsed.hostname !== host) return null;
+    if (
+      parsed.port !== "" ||
+      parsed.username !== "" ||
+      parsed.password !== ""
+    ) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+  return url;
 }
 
 /**
  * A name for a preview the body did not name, read off the host.
  *
- * `pr-10122-admin.acme.vercel.app` is the admin build and `pr-10122.acme.vercel.app`
- * is the application. Only the suffix tells them apart, so only the suffix is used.
+ * `pr-812-admin.acme.vercel.app` is the admin build and `pr-812.acme.vercel.app` is
+ * the application. Only the suffix tells them apart, so only the suffix is used.
  */
 function nameOf(host: string, number: number): string {
   const prefix = `pr-${number}`;
@@ -44,8 +91,8 @@ function nameOf(host: string, number: number): string {
  *
  * All of them, not just the application. The earlier version returned the single
  * `pr-<n>.` host and called the rest noise, and that one decision was the largest
- * cause of a verification step being recorded as not runnable: a change in web-admin,
- * in Storybook or behind the dev API has a preview built and waiting, and the stage
+ * cause of a verification step being recorded as not runnable: a change in an admin
+ * app, in Storybook or behind the dev API has a preview built and waiting, and the stage
  * was told there was none. A step was then correctly refused against a preview that
  * does not serve the code under review. AC-AW1.
  *
@@ -69,15 +116,18 @@ export function previews(body: string, number: number): Preview[] {
   for (const match of body.matchAll(VERCEL_URL)) {
     const host = match[1].toLowerCase();
     if (!host.startsWith(exact) && !host.startsWith(dashed)) continue;
-    const url = `https://${host}${match[2] ?? ""}`;
-    if (seen.has(url)) continue;
+    const url = confirmed(host, (match[2] ?? "").replace(TRAILING, ""));
+    if (url === null || seen.has(url)) continue;
     seen.add(url);
 
+    // Only this URL's own row can name it. A row with no bolded cell otherwise took
+    // the label of the row above, which named a different build.
     const near = labels.filter(
       (label) =>
         label.at < match.index &&
         match.index - label.at < LABEL_REACH &&
-        label.text.length > 0,
+        label.text.length > 0 &&
+        !ROW_EDGE.test(body.slice(label.at, match.index)),
     );
     const nearest = near[near.length - 1];
     found.push({ label: nearest?.text ?? nameOf(host, number), url });
