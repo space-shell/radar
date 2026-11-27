@@ -406,7 +406,11 @@ export function Inbox({
         </View>
 
         <View style={styles.badges}>
-          {data?.unreadable ? (
+          {/* `.length`, not the array. An empty array is truthy, so this
+              read `0 unreadable` on every healthy inbox, which is every inbox
+              there has ever been: a danger badge that is permanently on says
+              nothing when it is and nothing when it is not. AC-AX1. */}
+          {data?.unreadable.length ? (
             <View
               accessibilityLabel={`${data.unreadable.length} records could not be read`}
               style={styles.badgeDanger}

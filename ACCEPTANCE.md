@@ -1668,6 +1668,18 @@ run.
       of the two it is and what was tried, and `could not be tested` is named in
       the brief as not an answer. Needs a real run.
 
+## AX. A badge that is always on is not a badge
+
+- [x] **AC-AX1** The unreadable count shows only when something is unreadable.
+      The header tested `data?.unreadable`, and an empty array is truthy, so the
+      danger badge read `0 unreadable` on every healthy inbox. In the plugin's
+      whole life the count has never been anything but zero, so the badge was a
+      permanent red mark reporting nothing, and a reader learned to skip the
+      place a real one would appear. It now tests `.length`, matching the
+      section below it, which has always been guarded correctly. The count, the
+      reason and the Forget control are all unchanged and still appear the
+      moment a stored record fails `safeParse`. AC-R10 and AC-AR9 stand.
+
 ## Awaiting the app
 
 Every criterion below is built and typechecked. None can be ticked from here: each asserts
