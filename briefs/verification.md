@@ -21,7 +21,7 @@ evidence was within reach and was not tried. Read the ladder below before writin
 5. Never start a development server, and never point the browser at localhost for the
    application under review. The preview deployments listed in the prompt are the only
    browser targets, and every one of them is permitted. Pick the one that serves the code
-   this pull request changes: the admin build for a change under web-admin, a Storybook
+   this pull request changes: the admin build for a change to the admin app, a Storybook
    build for a component story, the application build otherwise. A step is short of a
    target only when none of the listed previews serves it, and the detail then names
    which build it needed. When the prompt lists no preview at all, every step that needs

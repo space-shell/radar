@@ -131,7 +131,7 @@ settling `done` and noting `1 finding`.
 
 - [x] **AC-F1** Verification sends a prompt to the same existing agent, as in AC-E1. Verified by construction: it calls the same `askAgent`, which only ever reaches `agents.ref`. Confirmed 2026-10-15 against a stand-in SDK whose `create` threw on contact.
 - [ ] **AC-F2** The agent follows the manual verification steps from the PR description, in order. The brief requires each step copied close to verbatim and forbids dropping one, but only a real run shows whether the list matches the description.
-- [ ] **AC-F3** Browser work targets a Vercel preview parsed from the PR body, never a local dev server. Amended by AC-AW1: the parser returned only the `pr-<n>.` application host and declined every other build, which was the single largest cause of a step being recorded as not runnable, so it now returns all of them and the brief picks between them. What it still declines is verified by probe: another pull request's preview, `pr-101223` against `10122`, and a `vercel.com` link that is not a deployment. The prompt carries every preview, and says plainly not to start a dev server when there is none. What the browser is actually pointed at needs a real run.
+- [ ] **AC-F3** Browser work targets a Vercel preview parsed from the PR body, never a local dev server. Amended by AC-AW1: the parser returned only the `pr-<n>.` application host and declined every other build, which was the single largest cause of a step being recorded as not runnable, so it now returns all of them and the brief picks between them. What it still declines is verified by probe: another pull request's preview, `pr-8123` against `812`, and a `vercel.com` link that is not a deployment. The prompt carries every preview, and says plainly not to start a dev server when there is none. What the browser is actually pointed at needs a real run.
 - [ ] **AC-F4** A step that is not runnable as written is recorded as such, with the reason, rather than skipped quietly. The reason is enforced on read, not asked for: verified 2026-10-15 that a `not runnable` step with a blank detail fails the stage with `a step that did not pass must say why`, and that an empty list fails with `expected array to have >=1 items`. Whether every step in the description reached the list can only be seen on a real run.
 - [x] **AC-F5** Verification results append to the same findings file, tagged with their stage, so Feedback can separate them from code findings per AC-G17. Verified 2026-10-15: the agent writes its own scratch file and the server merges, so it never holds the findings file open. Three steps merged alongside an existing code finding, both lists intact, the scratch file removed. Run in the other order, with no findings file in place, the merge created one with `findings: []`, and QA running afterwards carried the verification list across.
 - [x] **AC-F6** Verification is skippable on the same terms as AC-E8. Verified 2026-10-15: skipping each stage in turn moved the current node to the next one, QA to verification to feedback to dismiss.
@@ -1623,12 +1623,12 @@ honest refusals but the plugin's own doing.
 
 Twenty of them wanted a surface that was built and waiting. `server/preview.ts`
 returned the single `pr-<n>.` application host and discarded the rest, and brief
-rule 5 called that one URL "the only target", so a change to web-admin, to
+rule 5 called that one URL "the only target", so a change to the admin app, to
 Storybook or behind the dev API was verified against a preview that does not
 serve it, and correctly refused. Six more got the line "none published on this
-pull request" when the body published one: #10153 built only
-`pr-10153-admin.acme.vercel.app`, and the agent said so itself, naming the CI
-run whose admin deploy had succeeded. Nine were destructive steps refused against
+pull request" when the body published one: one built only a `pr-<n>-admin`
+preview, and the agent said so itself, naming the CI run whose admin deploy
+had succeeded. Nine were destructive steps refused against
 a prod preview while a `(dev)` build of the same surface sat in the same table.
 A further twelve were refused only because an earlier step had been, eight hit
 browser tooling that timed out, and four wanted a command this machine could have
@@ -1643,8 +1643,8 @@ run.
       back to the host's own suffix, so the agent can tell `(dev)` from `(prod)`
       without parsing a hostname. A path now terminates at a quote, a bracket and
       an angle bracket as well as whitespace, which fixes the two records whose
-      target was recorded as `/home">Web`. Verified by probe, and against the
-      live bodies of `#10122`, `#10153` and `#9916`: four previews, one, and four.
+      target was recorded as `/home">Web`. Verified by probe, and against three
+      live pull request bodies: four previews, one, and four.
 - [ ] **AC-AW2** `not runnable` is the last rung of a ladder, not the first
       answer. Before writing it the agent tries another preview, another route to
       the same state, the repository's own command inside the development
