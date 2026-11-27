@@ -8,11 +8,13 @@ import {
   readArtifact,
 } from "./artifact";
 import {
+  applyQaDecision,
   applyVerificationDecision,
   noteSkipped,
-  startDecidedVerifications,
+  qaDecision,
+  startDecidedStages,
   verificationDecision,
-} from "./auto-verify";
+} from "./auto-stages";
 import { log } from "./log";
 import { briefPath } from "./briefs";
 import { loadConfig } from "./settings";
@@ -52,16 +54,18 @@ function prompt(record: IntakeRecord, brief: string, output: string): string {
 }
 
 /**
- * Keeps the summary fields and drops the envelope the agent wrote, and acts on
- * its verification decision when it is the record's first summary.
+ * Keeps the summary fields and drops the envelope the agent wrote, and decides
+ * what starts on its own when it is the record's first summary: QA, and
+ * verification as the summary says.
  *
- * The decision is taken in the same write as the summary, so no reader can see
- * a first summary whose decision has not been recorded and take it again. A
- * skip is complete when this returns. A run is recorded and sent by whichever
- * path holds a Paseo handle, which the floor pass does not. AC-AY1.
+ * Both decisions are taken in the same write as the summary, so no reader can
+ * see a first summary whose decisions have not been recorded and take them
+ * again. A skip is complete when this returns. A run is recorded and sent by
+ * whichever path holds a Paseo handle, which the floor pass does not. AC-AY1,
+ * AC-AZ1.
  */
 async function store(key: string, file: SummaryFile): Promise<void> {
-  const { autoVerify } = await loadConfig();
+  const { autoQa, autoVerify } = await loadConfig();
   const decision = await updateState((state) => {
     const record = state.intake.find((candidate) => candidate.key === key);
     if (!record) return null;
@@ -77,11 +81,17 @@ async function store(key: string, file: SummaryFile): Promise<void> {
     // A summary that arrived makes the last failure stale, whichever path wrote it.
     delete record.summaryError;
 
+    const now = new Date().toISOString();
+    applyQaDecision(
+      record,
+      qaDecision(record, { enabled: autoQa, first }),
+      now,
+    );
     const decision = verificationDecision(record, {
       enabled: autoVerify,
       first,
     });
-    applyVerificationDecision(record, decision, new Date().toISOString());
+    applyVerificationDecision(record, decision, now);
     return decision;
   });
   if (decision === "skip") noteSkipped(key);
@@ -142,11 +152,11 @@ async function summarise(record: IntakeRecord, paseo: Paseo): Promise<void> {
     const gate = await gateFor(paseo, record, "summary");
     if (gate.agentId) await inLane(gate.agentId, gate.ready, turn);
     else await turn();
-    // After the lane is released, never inside `turn`: verification queues on
-    // the same agent, and a turn waiting on its own lane would never be sent.
-    // Its own catch, so a refusal is not written up as a failed summary.
-    void startDecidedVerifications(paseo).catch((error) =>
-      log(`automatic verification not started: ${String(error)}`),
+    // After the lane is released, never inside `turn`: QA and verification
+    // queue on the same agent, and a turn waiting on its own lane would never be
+    // sent. Its own catch, so a refusal is not written up as a failed summary.
+    void startDecidedStages(paseo).catch((error: unknown) =>
+      log(`automatic stages not started: ${String(error)}`),
     );
   } catch (caught) {
     // A queued summary dropped at shutdown is not a failed summary. No turn was

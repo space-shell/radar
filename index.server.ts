@@ -409,13 +409,14 @@ export default function contribute(server: PluginServerContext) {
   };
 
   log("started");
-  // Said once at start, with where it was read from, because the switch costs a
-  // browser session per pull request when it is on and nothing on the screen
-  // says which file is in charge. AC-AY6.
+  // Said once at start, with where it was read from, because each switch costs
+  // a turn per pull request when it is on and nothing on the screen says which
+  // file is in charge. AC-AY6, AC-AZ6.
+  const onOff = (value: boolean) => (value ? "on" : "off");
   void Promise.all([loadConfig(), configSource()])
     .then(([config, source]) =>
       log(
-        `automatic verification is ${config.autoVerify ? "on" : "off"}, read from ${source}`,
+        `automatic QA is ${onOff(config.autoQa)}, automatic verification is ${onOff(config.autoVerify)}, read from ${source}`,
       ),
     )
     .catch((error) => log(`cannot read the settings: ${String(error)}`));

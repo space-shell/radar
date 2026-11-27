@@ -1,5 +1,5 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
-import { startDecidedVerifications } from "./auto-verify";
+import { startDecidedStages } from "./auto-stages";
 import { log } from "./log";
 import { agentSettled, reconcileAgents } from "./reconcile";
 import { coalesce } from "./single-flight";
@@ -35,9 +35,9 @@ let lastSettleAt = 0;
  * The Paseo handle the last hook carried, so the settle pass can send a turn.
  *
  * The plugin context has none, and the floor runs from the tick, so the first
- * hook after a start is what makes one available. Until then a decided
- * verification waits on its marker rather than being lost: the next hook or
- * summary press sends it. The handle is the subprocess's own session, the same
+ * hook after a start is what makes one available. Until then a decided run
+ * waits on its marker rather than being lost: the next hook or summary press
+ * sends it. The handle is the subprocess's own session, the same
  * one every handler is given, so holding it past the hook is holding nothing
  * the hook owned. AC-AY5.
  */
@@ -55,7 +55,7 @@ const settle = coalesce(async () => {
   lastSettleAt = Date.now();
   await reconcileStages();
   await collectSummaries();
-  if (handle) await startDecidedVerifications(handle);
+  if (handle) await startDecidedStages(handle);
 });
 
 /**
