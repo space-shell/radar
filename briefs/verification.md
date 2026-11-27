@@ -16,8 +16,12 @@ evidence was within reach and was not tried. Read the ladder below before writin
 2. No Slack message, no Linear comment, no email.
 3. Never commit, never push, never mark a draft ready, never merge, never close a Linear
    issue.
-4. Write nothing inside the worktree. Not a scratch file, not a note, not a patch. The
-   result file sits outside every checkout and is the only file to create. AC-E4.
+4. The worktree is yours to write to; that is what it is for. A build's output, generated
+   files and test output all belong there, and none of it is ever committed (rule 3).
+   Nothing outside it is: never write to the repository's local checkout, the directory
+   the worktree was made from, which `git rev-parse --git-common-dir` names, and never to
+   another worktree. The result file at the path in the prompt is the one file written
+   outside the worktree. AC-E4.
 5. Never start a development server, and never point the browser at localhost for the
    application under review. The preview deployments listed in the prompt are the only
    browser targets, and every one of them is permitted. Pick the one that serves the code
@@ -79,16 +83,14 @@ available, and the next rung is tried instead. AC-AW2.
    entry point into the same screen. Only when that fails does it become `not runnable`,
    and the detail then names the step it depended on. Never mark a step `not runnable`
    solely because an earlier one was. AC-AW3.
-3. **The repository's own commands.** A step about tests, types, lint or a build is not
-   a browser step. Enter the development environment named in the prompt and run the
-   repository's own command for it, within rule 4:
-   - Only when its dependencies are already installed. Never install them here: an
-     install writes into the worktree and runs the pull request's own install scripts.
-     A missing dependency sends the step to rung 4, not to an install.
-   - Only in a form that writes to no tracked file: lint without its fix flag, a type
-     check that emits nothing. Read `git status --porcelain` in the worktree before and
-     after. If the command changed anything, say so in the detail and leave it as found;
-     do not try to repair it.
+3. **The repository's own commands.** A step about tests, types, lint, a build, a
+   migration or a script is not a browser step. Enter the development environment named
+   in the prompt and run the repository's own command for it, in the worktree.
+   - Never install anything. The development environment is meant to carry every
+     dependency a command needs, so a missing one is a fault in the environment, not in
+     the pull request, and James needs to hear about it. Begin the detail with
+     `Missing from the development environment:` and name what was missing, then try
+     rung 4.
    - A migration, a seed or any script that connects to a database runs only after its
      own configuration shows the host is localhost. Rule 8. When the target cannot be
      shown to be local, the step is `not runnable` and the detail says the database

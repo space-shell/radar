@@ -116,7 +116,7 @@ one behaviour rather than two.
 - [x] **AC-E1** QA sends a new prompt to the existing intake agent, through the SDK handle on the RPC context. It never creates a second agent for the same PR. Verified by construction: `server/turn.ts` reaches the SDK only through `agents.ref(record.agentId)`, and `launchIntake` is the one creation site in the plugin, called only from `server/actions.ts`. Confirmed 2026-10-15 against a stand-in SDK whose `create` threw on contact: the happy path never touched it.
 - [x] **AC-E2** QA on a record with no live agent reports that and offers Retry instead of silently doing nothing. Verified 2026-10-15 through the real stage machinery: the stage settled `failed` with `this record has no agent. Retry it to make one`, the record moved to `orphaned` carrying `lastError`, and `orphaned` is one of the three states the row offers Retry for. An agent that is archived, closed or unreadable takes the same route.
 - [x] **AC-E3** The agent writes findings to `~/.local/state/radar/findings/<repo>#<number>.json`, outside every git worktree. Verified 2026-10-15: the resolved path sat under the state directory, and the repo's slash puts the file one directory deeper, which `prepareFindings` creates.
-- [ ] **AC-E4** Nothing is ever written into the PR worktree, so no stage can dirty a checkout or create something committable. The server half holds by construction: every write goes through `server/findings.ts`, which only ever addresses `STATE_DIR`. The agent half rests on a hard rule in the brief and needs a real run to confirm.
+- [ ] **AC-E4** Nothing is ever written into the repository's local checkout, so no stage can dirty the clone James works in. Amended by AC-AW7: the PR worktree may be written to, which is what it exists for, and nothing written there is ever committed. The server half holds by construction: every write goes through `server/findings.ts`, which only ever addresses `STATE_DIR`. The agent half rests on a hard rule in the brief and needs a real run to confirm.
 - [x] **AC-E5** The findings file is validated against a zod schema on read. An invalid file sets the stage to `failed` and says so; it never degrades to zero findings silently. Verified 2026-10-15 against seven inputs: missing file, malformed JSON, missing keys, an unknown severity, a missing line anchor, a fractional line and an empty body. Every one threw with the offending field named.
 - [x] **AC-E6** Each finding carries `path`, `line`, `side`, `severity`, and `body`. Verified 2026-10-15: dropping any one of the five fails the parse.
 - [ ] **AC-E7** The QA agent posts nothing to GitHub. Writing the findings file is its only output. The server posts nothing, but the agent holds `gh`, so only a real run settles this.
@@ -1681,17 +1681,18 @@ run.
       table row. Verified by probe: six of the new checks fail against the
       previous parser and pass against this one.
 - [x] **AC-AW7** The ladder never outranks a hard rule. Its third rung told the
-      agent to install missing dependencies, inside a worktree rule 4 forbids it
-      to write to, and to run migrations and scripts with nothing tying them to
-      rule 8. It now runs a repository command only when the dependencies are
-      already installed, only in a form that writes no tracked file, with
-      `git status --porcelain` read before and after, and a database script only
-      once its own configuration shows a localhost target. A missing dependency
-      goes to the CI rung, not to an install. The sentence sending a credential,
-      production-only data, a destructive step with no `(dev)` preview and any
-      non-localhost database to `not runnable`, dropped when the ladder went in,
-      is back. Verified by probe against the brief's text: six checks fail
-      against the previous brief. Whether an agent obeys it needs a real run,
+      agent to install missing dependencies and to run migrations and scripts
+      with nothing tying them to rule 8. It now never installs: the development
+      environment is meant to carry every dependency, so a missing one is a
+      fault in the environment, flagged in a detail that begins
+      `Missing from the development environment:`, and the step moves on to
+      the CI rung. A database script runs only once its own configuration
+      shows a localhost target. Rule 4 now says what it should have: the worktree is there to be
+      written to, and the repository's local checkout and every other worktree
+      are not. The sentence sending a credential, production-only data, a
+      destructive step with no `(dev)` preview and any non-localhost database to
+      `not runnable`, dropped when the ladder went in, is back. Verified by probe
+      against the brief's text. Whether an agent obeys it needs a real run,
       under AC-E4.
 
 ## AX. A badge that is always on is not a badge
@@ -1735,7 +1736,7 @@ invocation command, so there is no route to them except the running app.
 | AC-C5                          | A daemon restart while a stage is `running`                                                                     |
 | AC-D1, AC-D5                   | One Run QA press on a live PR, read for the eyes reaction, then the same with GitHub out of reach               |
 | AC-H2 warning path             | A dismiss while GitHub is unreachable, to see the toast                                                         |
-| AC-E4, AC-E7                   | One real QA run, then `git status` in the worktree and the PR's comment list                                    |
+| AC-E4, AC-E7                   | One verification run, then `git status` in the local checkout, the worktree's log and the PR's comments         |
 | AC-F2, AC-F3, AC-F4            | One real verification run, read against the description's own steps                                             |
 | AC-F7                          | The same run, with the shell history checked for a database client                                              |
 | AC-I8                          | Disable and re-enable the plugin, then read the log for a doubled interval                                      |

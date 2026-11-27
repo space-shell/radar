@@ -13,9 +13,10 @@ const check = (name, got, want) => {
 
 /**
  * The verification brief is prose an agent obeys, so the guards in it are pinned
- * here. Each line below was missing from one revision: the ladder told the agent to
- * install dependencies inside a worktree it is forbidden to write to, and the
- * sentence sending credentials, production data and remote databases to
+ * here. Each line below was missing or wrong in one revision: the ladder told the
+ * agent to install dependencies, which the development environment is meant to
+ * carry; the worktree was declared unwritable, when writing there is what it is for;
+ * and the sentence sending credentials, production data and remote databases to
  * `not runnable` was dropped when the ladder went in. AC-AW7.
  */
 const brief = (
@@ -28,8 +29,13 @@ const brief = (
 const has = (text) => brief.includes(text);
 
 check(
-  "AW7 the worktree rule stands",
-  has("Write nothing inside the worktree."),
+  "AW7 the worktree is writable",
+  has("The worktree is yours to write to"),
+  true,
+);
+check(
+  "AW7 the local checkout is not",
+  has("never write to the repository's local checkout"),
   true,
 );
 check(
@@ -37,15 +43,15 @@ check(
   has("The ladder works inside the hard rules above and never around them"),
   true,
 );
-check("AW7 the ladder never installs", has("Never install them here"), true);
+check("AW7 the ladder never installs", has("Never install anything."), true);
 check(
   "AW7 nothing tells the agent to install dependencies",
   /install them with the package manager/i.test(brief),
   false,
 );
 check(
-  "AW7 the worktree is read before and after a command",
-  has("git status --porcelain"),
+  "AW7 a missing dependency is flagged in fixed words",
+  has("Begin the detail with `Missing from the development environment:`"),
   true,
 );
 check(
