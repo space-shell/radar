@@ -408,6 +408,14 @@ function Fields({
                 }
               />
               <SettingsInput
+                label="Preview hosts"
+                hint="Previews that are not on vercel, comma separated. {n} is the pull request number and is required; * is one label."
+                initialValue={joinList(draft.previewHosts)}
+                onChangeText={(text) =>
+                  patch({ previewHosts: splitList(text) })
+                }
+              />
+              <SettingsInput
                 label="Development environment"
                 hint="The command that enters it, named in the prompt of every agent this plugin launches. Empty for none."
                 initialValue={draft.setupCommand ?? ""}

@@ -100,6 +100,13 @@ export const radarSettings = defineSettings({
      */
     checkoutRoots: z.array(z.string().min(1)).default(["~/work"]),
     /**
+     * Preview hosts that are not vercel deployments, as templates: `{n}` is the pull
+     * request number and is required, and `*` stands for one label. A host in a pull
+     * request body that matches one is offered to the verification stage beside the
+     * vercel previews. Empty means vercel previews only.
+     */
+    previewHosts: z.array(z.string().min(1)).default([]),
+    /**
      * The Linear workspace slug, and the team keys worth linking. A body naming
      * `ENG-1234` only becomes a link when `ENG` is listed here, so an unrelated
      * capitalised word cannot turn into a dead issue link.

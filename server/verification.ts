@@ -15,6 +15,7 @@ import { keyUrl, note as ledger } from "./ledger";
 import { log } from "./log";
 import { previewLines, previews, type Preview } from "./preview";
 import { setupCommand, setupLines } from "./setup";
+import { loadConfig } from "./settings";
 import { runStage, type StageResult } from "./stages";
 import { loadState, updateState } from "./state";
 import { askAgent, gateFor, type Paseo } from "./turn";
@@ -74,7 +75,11 @@ export function runVerification(
       // than their last writes. AC-AG6.
       inFindingsLane(record.key, async () => {
         const body = await pullRequestBody(record.repo, record.number);
-        const deployments = previews(body, record.number);
+        const deployments = previews(
+          body,
+          record.number,
+          (await loadConfig()).previewHosts,
+        );
 
         const scratch = verificationPath(record.repo, record.number);
         await prepareArtifact(scratch);

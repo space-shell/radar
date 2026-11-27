@@ -18,7 +18,7 @@ const check = (name, got, want) => {
  */
 const row = (name, url, project) =>
   `<tr><td><b>${name}</b></td><td><a href="${url}">${name} preview</a></td>` +
-  `<td>✅ <a href="https://vercel.com/acme/${project}/EuJ1">Built in 52s</a></td></tr>`;
+  `<td>✅ <a href="https://vercel.com/acme/${project}/7mXqK2pRvT9wLcN4bYsH3dFgJ8aZ">Built in 52s</a></td></tr>`;
 
 const TABLE = [
   "## Deployments",
@@ -122,7 +122,7 @@ check(
 check(
   "AW5 a host that is not vercel.app is not a preview",
   previews(
-    "https://vercel.com/acme/web/EuJ1 and https://pr-5.acme.dev/home",
+    "https://vercel.com/acme/web/7mXqK2pRvT9wLcN4bYsH3dFgJ8aZ and https://pr-5.acme.dev/home",
     5,
   ),
   [],
@@ -261,6 +261,78 @@ check(
     { label: "Web App (prod)", url: "https://pr-5.acme.vercel.app" },
     { label: "admin", url: "https://pr-5-admin.acme.vercel.app" },
   ],
+);
+
+// AW13: a preview that is not a vercel deployment, such as an MCP server, counts only
+// when settings name its host, and a template cannot be written wide enough to take
+// another pull request's host or another domain's.
+const MCP = `${TABLE}\nMCP server: https://web-mcp-server-812.pr.dev.acme.cloud/mcp`;
+const MCP_HOST = ["web-mcp-server-{n}.pr.dev.acme.cloud"];
+
+check(
+  "AW13 an unconfigured host is not a preview",
+  previews(MCP, 812).some((preview) => preview.url.includes("mcp")),
+  false,
+);
+check(
+  "AW13 a configured host is, named off the host, after the application",
+  previews(MCP, 812, MCP_HOST).map((preview) => preview.label),
+  [
+    "Web App (prod)",
+    "Admin (prod)",
+    "Web App (dev)",
+    "Web Storybook",
+    "web-mcp-server-812.pr.dev.acme.cloud",
+  ],
+);
+check(
+  "AW13 the configured host keeps its path",
+  previews(MCP, 812, MCP_HOST).at(-1)?.url,
+  "https://web-mcp-server-812.pr.dev.acme.cloud/mcp",
+);
+check(
+  "AW13 another pull request's configured host is not this one's",
+  previews(
+    "https://web-mcp-server-81.pr.dev.acme.cloud https://web-mcp-server-8123.pr.dev.acme.cloud",
+    812,
+    MCP_HOST,
+  ),
+  [],
+);
+check(
+  "AW13 a template without {n} is ignored",
+  previews(MCP, 812, ["web-mcp-server-812.pr.dev.acme.cloud"]).length,
+  4,
+);
+check(
+  "AW13 a star matches one label, never a dot",
+  hostOf(
+    previews(
+      "https://a.mcp-812.acme.cloud https://a.b.mcp-812.acme.cloud",
+      812,
+      ["*.mcp-{n}.acme.cloud"],
+    ),
+  ),
+  ["a.mcp-812.acme.cloud"],
+);
+check(
+  "AW13 a star touching {n} is refused",
+  previews("https://mcp-9812.acme.cloud", 812, ["mcp-*{n}.acme.cloud"]),
+  [],
+);
+check(
+  "AW13 a template cannot widen into a regex",
+  previews("https://mcp-812Xacme.cloud", 812, ["mcp-{n}.acme.cloud"]),
+  [],
+);
+check(
+  "AW13 userinfo after a configured host is not a preview",
+  previews(
+    "https://web-mcp-server-812.pr.dev.acme.cloud@evil.example/mcp",
+    812,
+    MCP_HOST,
+  ),
+  [],
 );
 
 console.log(failures === 0 ? "\nall pass" : `\n${failures} FAILED`);

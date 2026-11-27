@@ -1694,6 +1694,16 @@ run.
       `not runnable`, dropped when the ladder went in, is back. Verified by probe
       against the brief's text. Whether an agent obeys it needs a real run,
       under AC-E4.
+- [x] **AC-AW8** A preview that is not a vercel deployment, such as an MCP
+      server, reaches the verification stage when settings name its host.
+      `previewHosts` holds templates: `{n}` is the pull request number and is
+      required, `*` is exactly one label, a `*` touching `{n}` is refused, and
+      everything else matches literally. A configured host passes the same
+      `URL` check as a vercel one and is named off its host when its row has no
+      label. The default is empty, so the repository names no machine's
+      domain. Verified by probe: unconfigured, configured, another pull
+      request's number, a template without `{n}`, a star across a dot, a star
+      touching `{n}`, a literal dot, and userinfo after a configured host.
 
 ## AX. A badge that is always on is not a badge
 
