@@ -394,8 +394,10 @@ async function markStarted(key: string, stage: ReviewStage): Promise<void> {
  * outside the lock because it reaches GitHub, and a held lock would block every
  * other press for the length of that call. R2.
  *
- * Reachable only from an RPC handler, which is reachable only from a press. No tick
- * calls this, which is what keeps every GitHub write attended. AC-I2.
+ * Reachable from an RPC handler, which is reachable only from a press, and from
+ * `startDecidedVerifications`, which reaches only `runVerification`. That stage
+ * has no `onClaim` and its turn is told to post nothing, so every GitHub write
+ * this function can make is still behind a press. AC-I2, AC-AY4.
  */
 export async function runStage(
   key: string,

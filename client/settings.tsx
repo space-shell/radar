@@ -210,6 +210,16 @@ function TaskSection({
   return (
     <SettingsSection title={TASK_LABELS[task]}>
       <SettingsRow label="What it does" hint={TASK_NOTES[task]} />
+      {task === "verification" ? (
+        // Here rather than under Intake, beside the task it starts and the
+        // model it will spend. AC-AY7.
+        <SettingsSwitch
+          label="Run automatically"
+          hint="When a pull request's first summary says verification is required, it is queued; when it says it is not, the stage is skipped. Once per pull request: a push or a new summary never starts another."
+          value={draft.autoVerify}
+          onValueChange={(autoVerify) => onChange({ ...draft, autoVerify })}
+        />
+      ) : null}
       {task === "intake" ? null : (
         <SettingsSwitch
           label="Use intake's agent"

@@ -1,10 +1,12 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
+import { startDecidedVerifications } from "./auto-verify";
 import { log } from "./log";
 import { agentSettled, reconcileAgents } from "./reconcile";
 import { coalesce } from "./single-flight";
 import { reconcileStages } from "./stages";
 import { loadState } from "./state";
 import { collectSummaries } from "./summary";
+import type { Paseo } from "./turn";
 
 /**
  * How long the tick may go without running the settle pass itself.
@@ -30,6 +32,18 @@ const SETTLE_FLOOR_SECONDS = 600;
 let lastSettleAt = 0;
 
 /**
+ * The Paseo handle the last hook carried, so the settle pass can send a turn.
+ *
+ * The plugin context has none, and the floor runs from the tick, so the first
+ * hook after a start is what makes one available. Until then a decided
+ * verification waits on its marker rather than being lost: the next hook or
+ * summary press sends it. The handle is the subprocess's own session, the same
+ * one every handler is given, so holding it past the hook is holding nothing
+ * the hook owned. AC-AY5.
+ */
+let handle: Paseo | null = null;
+
+/**
  * What a finished turn can have changed: a stage that was waiting on it, and a
  * summary file it may have written.
  *
@@ -41,6 +55,7 @@ const settle = coalesce(async () => {
   lastSettleAt = Date.now();
   await reconcileStages();
   await collectSummaries();
+  if (handle) await startDecidedVerifications(handle);
 });
 
 /**
@@ -116,7 +131,8 @@ function detach(what: string, work: () => Promise<void>): void {
  */
 export function attachHooks(server: PluginServerContext): () => void {
   const off = [
-    server.on("agent.turn_ended", (event) => {
+    server.on("agent.turn_ended", (event, context) => {
+      handle = context.paseo;
       const id = event.agent.id;
       // Before the ownership read, and whether or not it is ours: the set only
       // ever holds radar's agents, so removing one that is not in it is a no-op.
@@ -128,7 +144,8 @@ export function attachHooks(server: PluginServerContext): () => void {
       });
     }),
 
-    server.on("agent.archived", (event) => {
+    server.on("agent.archived", (event, context) => {
+      handle = context.paseo;
       const id = event.agent.id;
       agentSettled(id);
       detach("archived", async () => {
@@ -142,7 +159,8 @@ export function attachHooks(server: PluginServerContext): () => void {
      * Closed is both: the session is gone, so a record that claimed it has lost
      * its agent, and a stage that was waiting on a turn will never get one.
      */
-    server.on("agent.closed", (event) => {
+    server.on("agent.closed", (event, context) => {
+      handle = context.paseo;
       const id = event.agent.id;
       agentSettled(id);
       detach("closed", async () => {

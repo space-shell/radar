@@ -23,7 +23,11 @@ import {
 } from "./shared/settings";
 import { readProviderOptions } from "./server/providers";
 import { readShippedBrief } from "./server/briefs";
-import { attachSettings, readLegacyFile } from "./server/settings";
+import {
+  attachSettings,
+  configSource,
+  readLegacyFile,
+} from "./server/settings";
 import { configPath } from "./server/state";
 import {
   addPullRequest,
@@ -405,6 +409,16 @@ export default function contribute(server: PluginServerContext) {
   };
 
   log("started");
+  // Said once at start, with where it was read from, because the switch costs a
+  // browser session per pull request when it is on and nothing on the screen
+  // says which file is in charge. AC-AY6.
+  void Promise.all([loadConfig(), configSource()])
+    .then(([config, source]) =>
+      log(
+        `automatic verification is ${config.autoVerify ? "on" : "off"}, read from ${source}`,
+      ),
+    )
+    .catch((error) => log(`cannot read the settings: ${String(error)}`));
   // Once, in the background, and never blocking the first tick: it is roughly one
   // request per round already on disk, and every one of them already went out.
   // A failure costs the ids, and the position fallback still covers that round.
