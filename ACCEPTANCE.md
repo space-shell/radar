@@ -104,7 +104,7 @@ asks the lane for the agent, which can be an hour away and may never come. Posti
 pressed. `StageRunOptions.onClaim` runs between the two, so "performing or queueing" is
 one behaviour rather than two.
 
-- [x] **AC-D1** Pressing Run QA posts the `eyes` reaction to the pull request, whether the stage runs now or waits in a lane. Verified by probe: the press is answered `ok` with the reaction attempted at the claim, before the gate is consulted, and a queued press reaches it with no turn sent.
+- [x] **AC-D1** Pressing Run QA posts the `eyes` reaction to the pull request, whether the stage runs now or waits in a lane. Verified by probe: the press is answered `ok` with the reaction attempted at the claim, before the gate is consulted, and a queued press reaches it with no turn sent. A run the first summary starts posts none (AC-AZ3).
 - [x] **AC-D2** The reaction is posted to the issues reactions endpoint for the PR number, verified against a real PR. Verified 2026-10-15 against `owner/web#9462`: add left `["space-shell"]`, and the probe restored the PR to the empty state it started in.
 - [x] **AC-D3** Pressing Run QA on a PR that already carries an `eyes` reaction from this account is a no-op, not a duplicate or an error. Verified 2026-10-15: a second add answered 200 rather than 201 and the list stayed at one entry.
 - [x] **AC-D4** Removal re-queries the live reaction list and deletes by the returned id, rather than trusting a stored id. A reaction added by hand in the GitHub UI is therefore removable. Verified 2026-10-15: remove returned true and emptied the list, and a second remove returned false rather than throwing. This two-way idempotence is why no record field tracks the reaction: GitHub is the only record of whether it exists, so nothing stored can disagree with it.
@@ -183,7 +183,7 @@ the stage and left the existing findings file exactly as QA wrote it.
 ## I. Guardrails
 
 - [x] **AC-I1** No stage contacts a human on Slack, in Linear, or by email. GitHub review mechanics are the only outward channel. Verified by construction: the plugin holds no Slack client, no mail client and no Linear write path. `server/reactions.ts` is the only outward write in the codebase, and it writes one reaction.
-- [x] **AC-I2** Every GitHub write follows a press by James in an attended session. No scheduled or background path can post. Verified by construction: `runStage` is reachable only from the `radar.stage.run` handler, and `removeEyes` only from `dismissRecord` and the feedback submit. No interval, tick or reconciler calls it, and the pollers hold no reference to `reactions.ts`. The one path that starts a stage without a press, automatic verification (AC-AY4), reaches only `runVerification`, which has no `onClaim` and whose turn is told to post nothing, so it writes nothing to GitHub.
+- [x] **AC-I2** Every GitHub write follows a press by James in an attended session. No scheduled or background path can post. Verified by construction: `runStage` is reachable only from the `radar.stage.run` handler, and `removeEyes` only from `dismissRecord` and the feedback submit. No interval, tick or reconciler calls it, and the pollers hold no reference to `reactions.ts`. The two paths that start a stage without a press, automatic QA (AC-AZ3) and automatic verification (AC-AY4), reach only `runQa` with `automatic` set and `runVerification`. Neither carries an `onClaim` and both turns are told to post nothing, so neither writes to GitHub.
 - [x] **AC-I3** Nothing merges a PR, marks a draft ready, closes a Linear issue, commits, or pushes. Verified 2026-10-15: a search for merge, ready-for-review, close, commit and push calls across the plugin returns only `server/reap.ts` reading a PR's `MERGED` state.
 - [x] **AC-I4** No output anywhere contains an em dash. Verified 2026-10-15: a search for the character across the plugin, briefs included, returns nothing.
 - [x] **AC-I5** No credential is logged, including the GitHub token and the Linear key. Verified 2026-10-15: no `log()` call takes a token, and the token reaches exactly two places, the `Authorization` header in `server/github.ts` and the one in `server/reactions.ts`.
@@ -1739,11 +1739,12 @@ run.
       decision leaves the stage a press. Verified by probe.
 - [x] **AC-AY4** A run goes through `runVerification`, the press's own path: it
       queues behind a busy agent, shows as queued on the map with Cancel, and
-      carries no `onClaim`. QA is never started automatically. A decision that
-      no longer applies by the time it is sent, because the record was dismissed
-      or verified by hand, is spent rather than kept. Verified by probe, and by
-      construction: `server/auto-verify.ts` names no stage runner other than
-      `runVerification` and nothing that posts.
+      carries no `onClaim`. QA starts on its own only under its own switch
+      (AC-AZ1). A decision that no longer applies by the time it is sent,
+      because the record was dismissed or verified by hand, is spent rather than
+      kept. Verified by probe, and by construction: `server/auto-stages.ts`
+      names no stage runner other than `runQa` and `runVerification`, and
+      nothing that posts.
 - [x] **AC-AY5** A run needs a Paseo handle, and the floor pass after a restart
       has none. The decision then waits on its marker, with no `actedAt`, and
       the next hook or Summarise press sends it. The settle pass uses the handle
@@ -1757,6 +1758,40 @@ run.
 - [ ] **AC-AY8** The next review request whose summary says verification is
       required shows Verification queued without a press, and one whose
       summary says it is not shows it skipped with the note. Awaiting the app.
+
+## AZ. QA starts when the first summary lands, once
+
+- [x] **AC-AZ1** With `autoQa` on, a record's first summary queues QA on its
+      own, whatever the summary says about verification. The decision is taken
+      in the same `updateState` that stores the summary, beside verification's.
+      It never overrides James: a QA stage that has been pressed, queued, run,
+      skipped or reopened is left alone, as is a record dismissed, failed or
+      without an agent. Verified by probe: the rule as a fourteen row table,
+      and both switches off by default.
+- [x] **AC-AZ2** It acts once per record. Only the first summary decides, and
+      the `automaticQa` marker is the second lock, so a push, a re-summary and a
+      reopen start nothing. Turning the switch on starts nothing on records that
+      already have a summary. Verified by probe: a re-summary stores and decides
+      nothing.
+- [x] **AC-AZ3** No eyes reaction. `runQa` takes `automatic`, which drops the
+      `onClaim` that posts it, so the author learns a review has started only
+      when James presses Run QA. A later press on the same record adds it as
+      any press does. Verified by probe: with GitHub out of reach a press
+      reports the reaction it could not post and an automatic start reports
+      none. Verified by construction: every `runQa` call in
+      `server/auto-stages.ts` passes `automatic: true`.
+- [x] **AC-AZ4** QA is queued ahead of verification. The sweep sends a record's
+      QA before its verification, and a background stage returns only once it
+      holds its place in the agent's lane, so the settings read in the gate
+      cannot reorder two starts made one after the other. Verified by probe:
+      with both decided on a busy agent, QA's turn is the one sent when it
+      frees, and verification is still queued behind it when QA is over.
+- [ ] **AC-AZ5** The QA section of Settings carries a switch,
+      `Run automatically`, off by default. Awaiting the app.
+- [x] **AC-AZ6** The plugin log says at start whether automatic QA is on, beside
+      automatic verification.
+- [ ] **AC-AZ7** The next review request to arrive shows QA queued without a
+      press and no eyes reaction on the pull request. Awaiting the app.
 
 ## Awaiting the app
 
@@ -1828,6 +1863,8 @@ invocation command, so there is no route to them except the running app.
 | AC-AT4, AC-AT7                 | One Dismiss press, then Paseo's own workspace list, then Restore                                                |
 | AC-AY7                         | One open of Settings, Radar, read for the switch in the Verification section                                    |
 | AC-AY8                         | The next two review requests to arrive, one summarised as needing verification and one not                      |
+| AC-AZ5                         | One open of Settings, Radar, read for the switch in the QA section                                              |
+| AC-AZ7                         | The next review request to arrive, read on the map and on GitHub for the eyes reaction                          |
 
 ## Non-goals
 
